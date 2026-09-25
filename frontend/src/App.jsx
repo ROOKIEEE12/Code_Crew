@@ -1,28 +1,28 @@
 import React, { useState, useEffect } from 'react'
-import Navbar from './components/Navbar'
-import AgentSwarm from './components/AgentSwarm'
-import Workspace from './components/Workspace'
-import ProjectArchive from './components/ProjectArchive'
-import { Rocket, Sparkles, AlertCircle } from 'lucide-react'
+import TitleBar from './components/TitleBar'
+import ActivityBar from './components/ActivityBar'
+import Sidebar from './components/Sidebar'
+import EditorWorkspace from './components/EditorWorkspace'
+import CopilotPanel from './components/CopilotPanel'
 import './App.css'
 
-const SAMPLE_PROMPTS = [
-  'Modern Weather Dashboard with dark mode and smooth animations',
-  'FastAPI REST API with SQLite database, items CRUD, and error handling',
-  'Interactive Task Kanban Board with vanilla JS and local storage',
-  'Multi-page Portfolio website with responsive hero and contact form',
-]
-
 export default function App() {
-  const [activeTab, setActiveTab] = useState('studio') // 'studio' | 'archive'
+  // Navigation & Layout states
+  const [activeNav, setActiveNav] = useState('explorer') // 'explorer' | 'archive' | 'agents'
+  const [terminalOpen, setTerminalOpen] = useState(true)
+  const [livePreview, setLivePreview] = useState(false)
+  const [selectedFile, setSelectedFile] = useState('')
+
+  // Backend & Pipeline execution state
   const [backendStatus, setBackendStatus] = useState('connecting')
   const [prompt, setPrompt] = useState('')
   const [isBuilding, setIsBuilding] = useState(false)
+  const [isIterating, setIsIterating] = useState(false)
   const [errorMessage, setErrorMessage] = useState(null)
 
-  // Pipeline execution state
   const [pipelineState, setPipelineState] = useState({ state: 'idle' })
   const [plan, setPlan] = useState(null)
+  const [triagePlan, setTriagePlan] = useState(null)
   const [files, setFiles] = useState({})
   const [readme, setReadme] = useState('')
   const [testingResult, setTestingResult] = useState(null)
@@ -32,7 +32,6 @@ export default function App() {
   // Archived projects list
   const [projects, setProjects] = useState([])
 
-  // Check health and load projects
   useEffect(() => {
     checkHealth()
     loadProjects()
@@ -63,8 +62,10 @@ export default function App() {
     }
   }
 
-  const handleLaunchBuild = () => {
-    if (!prompt.trim() || isBuilding) return
+  // 1. Initial Build Swarm Trigger
+  const handleLaunchBuild = (inputPrompt) => {
+    const targetPrompt = inputPrompt || prompt
+    if (!targetPrompt.trim() || isBuilding || isIterating) return
 
     setIsBuilding(true)
     setErrorMessage(null)
@@ -73,9 +74,12 @@ export default function App() {
     setReadme('')
     setTestingResult(null)
     setPlan(null)
-    setLogs([`[Orchestrator] Initiating team swarm for prompt: "${prompt}"`])
+    setTriagePlan(null)
+    setLivePreview(false)
+    setTerminalOpen(true)
+    setLogs([`[Orchestrator] Initiating multi-agent swarm for prompt: "${targetPrompt}"`])
 
-    const url = `/api/build/stream?prompt=${encodeURIComponent(prompt)}`
+    const url = `/api/build/stream?prompt=${encodeURIComponent(targetPrompt)}`
     const eventSource = new EventSource(url)
 
     eventSource.addEventListener('log', (e) => {
@@ -113,14 +117,20 @@ export default function App() {
     eventSource.addEventListener('file_ready', (e) => {
       try {
         const payload = JSON.parse(e.data)
-        setFiles((prev) => ({
-          ...prev,
-          [payload.path]: {
-            code: payload.code,
-            language: payload.language,
-            audit: payload.audit,
-          },
-        }))
+        setFiles((prev) => {
+          const updated = {
+            ...prev,
+            [payload.path]: {
+              code: payload.code,
+              language: payload.language,
+              audit: payload.audit,
+            },
+          }
+          if (!selectedFile || selectedFile === 'README.md') {
+            setSelectedFile(payload.path)
+          }
+          return updated
+        })
       } catch (err) {}
     })
 
@@ -159,6 +169,94 @@ export default function App() {
     }
   }
 
+  // 2. Selective Iteration Trigger
+  const handleLaunchIteration = (changePrompt) => {
+    if (!currentProjectId || !changePrompt.trim() || isIterating || isBuilding) return
+
+    setIsIterating(true)
+    setErrorMessage(null)
+    setPipelineState({ state: 'triaging', message: 'Orchestrator triaging request...' })
+    setTerminalOpen(true)
+    setLogs((prev) => [
+      ...prev,
+      `[Orchestrator] Triaging change request: "${changePrompt}"`,
+    ])
+
+    const url = `/api/projects/${currentProjectId}/iterate/stream?prompt=${encodeURIComponent(changePrompt)}`
+    const eventSource = new EventSource(url)
+
+    eventSource.addEventListener('log', (e) => {
+      try {
+        const payload = JSON.parse(e.data)
+        setLogs((prev) => [...prev, `[${payload.agent}] ${payload.message}`])
+      } catch (err) {}
+    })
+
+    eventSource.addEventListener('status', (e) => {
+      try {
+        const payload = JSON.parse(e.data)
+        setPipelineState(payload)
+      } catch (err) {}
+    })
+
+    eventSource.addEventListener('orchestrator_triage', (e) => {
+      try {
+        const payload = JSON.parse(e.data)
+        setTriagePlan(payload.plan)
+      } catch (err) {}
+    })
+
+    eventSource.addEventListener('file_ready', (e) => {
+      try {
+        const payload = JSON.parse(e.data)
+        setFiles((prev) => ({
+          ...prev,
+          [payload.path]: {
+            code: payload.code,
+            language: payload.language,
+            audit: payload.audit || prev[payload.path]?.audit,
+          },
+        }))
+        setSelectedFile(payload.path)
+      } catch (err) {}
+    })
+
+    eventSource.addEventListener('testing_update', (e) => {
+      try {
+        const payload = JSON.parse(e.data)
+        setTestingResult(payload.result)
+      } catch (err) {}
+    })
+
+    eventSource.addEventListener('readme_ready', (e) => {
+      try {
+        const payload = JSON.parse(e.data)
+        setReadme(payload.readme)
+      } catch (err) {}
+    })
+
+    eventSource.addEventListener('error', (e) => {
+      try {
+        if (e.data) {
+          const payload = JSON.parse(e.data)
+          setErrorMessage(payload.error || 'Iteration error')
+        }
+      } catch (err) {}
+    })
+
+    eventSource.addEventListener('done', () => {
+      setIsIterating(false)
+      eventSource.close()
+      loadProjects()
+    })
+
+    eventSource.onerror = () => {
+      setIsIterating(false)
+      eventSource.close()
+    }
+  }
+
+  // Load project from archive
   const handleLoadArchivedProject = async (projectId) => {
     try {
       const res = await fetch(`/api/projects/${projectId}`)
@@ -167,118 +265,109 @@ export default function App() {
         setFiles(data.files || {})
         setReadme(data.readme || '')
         setCurrentProjectId(projectId)
-        setPlan({ project_name: projectId, summary: 'Archived Project' })
+        const keys = Object.keys(data.files || {})
+        if (keys.length > 0) setSelectedFile(keys[0])
+        setPlan({ project_name: projectId, summary: 'Loaded Project' })
         setPipelineState({ state: 'completed' })
-        setActiveTab('studio')
+        setActiveNav('explorer')
       }
     } catch (e) {
       console.error('Failed to load project:', e)
     }
   }
 
-  const handleDownloadZip = (projId = null) => {
-    const targetId = projId || currentProjectId
-    if (!targetId) return
-    window.open(`/api/projects/${targetId}/download`, '_blank')
+  const handleDownloadZip = () => {
+    if (!currentProjectId) return
+    window.open(`/api/projects/${currentProjectId}/download`, '_blank')
   }
 
+  const handleNewProject = () => {
+    setCurrentProjectId(null)
+    setFiles({})
+    setReadme('')
+    setSelectedFile('')
+    setPlan(null)
+    setTriagePlan(null)
+    setPipelineState({ state: 'idle' })
+    setPrompt('')
+  }
+
+  const hasHtml = Boolean(files['index.html'] || Object.values(files).some((f) => f.language === 'html'))
+
   return (
-    <div className="app-container">
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+    <div className="antigravity-studio-root">
+      {/* 1. IDE Top Titlebar */}
+      <TitleBar
+        projectName={currentProjectId}
         backendStatus={backendStatus}
-        projectCount={projects.length}
+        onDownloadZip={handleDownloadZip}
+        hasFiles={Object.keys(files).length > 0}
+        livePreview={livePreview}
+        onToggleLivePreview={() => setLivePreview(!livePreview)}
+        hasHtml={hasHtml}
+        onNewProject={handleNewProject}
       />
 
-      <main className="main-content">
-        {activeTab === 'studio' ? (
-          <>
-            {/* Input Prompt Section */}
-            <div className="glass-panel-glow prompt-card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                <Sparkles size={18} color="#818cf8" />
-                <h2 style={{ fontSize: '1.15rem', fontWeight: 600 }}>
-                  What do you want the agent team to build?
-                </h2>
-              </div>
+      {/* 2. Main Studio Workspace Layout */}
+      <div className="ide-layout-body">
+        {/* Activity Bar (48px left icon bar) */}
+        <ActivityBar
+          activeNav={activeNav}
+          setActiveNav={setActiveNav}
+          projectCount={projects.length}
+          terminalOpen={terminalOpen}
+          onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
+        />
 
-              <textarea
-                className="prompt-textarea"
-                placeholder="Describe your desired project, application, CLI, or website in detail..."
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                disabled={isBuilding}
-                rows={3}
-              />
+        {/* Sidebar (240px Collapsible Explorer & Archive) */}
+        <Sidebar
+          activeNav={activeNav}
+          files={files}
+          selectedFile={selectedFile}
+          onSelectFile={(path) => {
+            setSelectedFile(path)
+            setLivePreview(false)
+          }}
+          readme={readme}
+          projectId={currentProjectId}
+          projects={projects}
+          onLoadProject={handleLoadArchivedProject}
+          onDownloadZip={handleDownloadZip}
+          onNewProject={handleNewProject}
+        />
 
-              <div className="prompt-actions">
-                <div className="template-chips">
-                  {SAMPLE_PROMPTS.map((p, i) => (
-                    <button
-                      key={i}
-                      className="chip-btn"
-                      onClick={() => setPrompt(p)}
-                      disabled={isBuilding}
-                    >
-                      {p.slice(0, 34)}...
-                    </button>
-                  ))}
-                </div>
+        {/* Center Editor Stage & Terminal Dock */}
+        <EditorWorkspace
+          files={files}
+          selectedFile={selectedFile}
+          onSelectFile={(path) => {
+            setSelectedFile(path)
+            setLivePreview(false)
+          }}
+          readme={readme}
+          logs={logs}
+          testingResult={testingResult}
+          terminalOpen={terminalOpen}
+          onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
+          livePreview={livePreview}
+          onToggleLivePreview={() => setLivePreview(!livePreview)}
+          onSelectSamplePrompt={(p) => setPrompt(p)}
+        />
 
-                <button
-                  className="launch-btn"
-                  onClick={handleLaunchBuild}
-                  disabled={isBuilding || !prompt.trim()}
-                >
-                  <Rocket size={17} />
-                  <span>{isBuilding ? 'Swarm Working...' : 'Deploy CodeCrew'}</span>
-                </button>
-              </div>
-
-              {errorMessage && (
-                <div
-                  style={{
-                    marginTop: '14px',
-                    padding: '10px 14px',
-                    background: 'rgba(239, 68, 68, 0.15)',
-                    border: '1px solid rgba(239, 68, 68, 0.4)',
-                    borderRadius: '8px',
-                    color: '#fca5a5',
-                    fontSize: '0.85rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                  }}
-                >
-                  <AlertCircle size={16} />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Specialist Agent Swarm Visualizer */}
-            <AgentSwarm pipelineState={pipelineState} />
-
-            {/* Workspace: File Tree, Code Viewer, Fact Checker & Test Results */}
-            <Workspace
-              files={files}
-              readme={readme}
-              plan={plan}
-              logs={logs}
-              testingResult={testingResult}
-              projectId={currentProjectId}
-              onDownloadZip={currentProjectId ? () => handleDownloadZip(currentProjectId) : null}
-            />
-          </>
-        ) : (
-          <ProjectArchive
-            projects={projects}
-            onLoadProject={handleLoadArchivedProject}
-            onDownloadZip={handleDownloadZip}
-          />
-        )}
-      </main>
+        {/* Right Copilot & Agent Swarm Panel */}
+        <CopilotPanel
+          pipelineState={pipelineState}
+          isBuilding={isBuilding}
+          isIterating={isIterating}
+          onLaunchBuild={handleLaunchBuild}
+          onLaunchIteration={handleLaunchIteration}
+          prompt={prompt}
+          setPrompt={setPrompt}
+          triagePlan={triagePlan}
+          projectId={currentProjectId}
+          errorMessage={errorMessage}
+        />
+      </div>
     </div>
   )
 }

@@ -22,11 +22,15 @@ export default function Workspace({
   projectDir,
   projectId,
   onDownloadZip,
+  onIterate,
+  isIterating,
+  managerPlan,
 }) {
   const fileKeys = Object.keys(files || {})
   const [selectedFile, setSelectedFile] = useState(fileKeys[0] || '')
   const [activeTab, setActiveTab] = useState('code') // 'code' | 'audit' | 'tests' | 'readme' | 'terminal'
   const [copied, setCopied] = useState(false)
+  const [changePrompt, setChangePrompt] = useState('')
 
   // Ensure selectedFile exists
   const currentFile = files[selectedFile] || (fileKeys.length > 0 ? files[fileKeys[0]] : null)
@@ -142,6 +146,76 @@ export default function Workspace({
 
       {/* Main Code & Analysis View */}
       <section className="code-viewer-panel">
+        {/* Orchestrator Iteration Bar */}
+        <div className="iteration-panel">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+            <Sparkles size={18} color="#6366f1" />
+            <input
+              type="text"
+              className="iteration-input"
+              placeholder={
+                projectId
+                  ? "Describe a change or bug fix (Orchestrator selectively calls only required agents)..."
+                  : "Generate or load a project first to request iterative changes..."
+              }
+              value={changePrompt}
+              onChange={(e) => setChangePrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !isIterating && changePrompt.trim() && projectId) {
+                  onIterate && onIterate(changePrompt)
+                  setChangePrompt('')
+                }
+              }}
+              disabled={isIterating || !projectId}
+            />
+          </div>
+          <button
+            className="iteration-btn"
+            onClick={() => {
+              if (onIterate && changePrompt.trim() && projectId) {
+                onIterate(changePrompt)
+                setChangePrompt('')
+              }
+            }}
+            disabled={isIterating || !changePrompt.trim() || !projectId}
+          >
+            {isIterating ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sparkles size={14} className="spin-slow" /> Orchestrating...
+              </span>
+            ) : (
+              <span>Apply Changes</span>
+            )}
+          </button>
+        </div>
+
+        {/* Orchestrator Triage Intelligence Banner */}
+        {managerPlan && (
+          <div className="manager-triage-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1rem' }}>🎯</span>
+                <strong style={{ fontSize: '0.85rem', color: '#6366f1' }}>Orchestrator Routing:</strong>
+                <span className="triage-badge intent-badge">{managerPlan.intent?.toUpperCase()}</span>
+                <span className="triage-badge swarm-badge">
+                  Assigned Agents: {managerPlan.required_agents?.join(', ')}
+                </span>
+              </div>
+              {managerPlan.target_files && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Target Files ({managerPlan.target_files.length}):{' '}
+                  <span style={{ color: '#818cf8' }}>
+                    {managerPlan.target_files.map((t) => t.path).join(', ')}
+                  </span>
+                </div>
+              )}
+            </div>
+            <p style={{ margin: '6px 0 0 0', fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+              {managerPlan.explanation}
+            </p>
+          </div>
+        )}
+
         <div className="viewer-header">
           {/* Navigation Tabs */}
           <div className="tab-group">

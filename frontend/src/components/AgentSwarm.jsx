@@ -49,7 +49,18 @@ const AGENT_ROSTER = [
 export default function AgentSwarm({ pipelineState }) {
   const getAgentStatus = (agentId) => {
     const s = pipelineState.state
+    const reqAgents = pipelineState.required_agents
+
     if (s === 'completed') return { status: 'complete', text: 'Done', color: '#10b981' }
+
+    if (s === 'triaging') {
+      return { status: 'idle', text: 'Evaluating', color: '#6366f1' }
+    }
+
+    // In targeted iteration mode, if this agent is not needed, keep in standby to preserve context
+    if (reqAgents && Array.isArray(reqAgents) && !reqAgents.includes(agentId)) {
+      return { status: 'idle', text: 'Standby (Context Saved)', color: 'var(--text-dim)' }
+    }
 
     if (agentId === 'planner') {
       if (s === 'planning') return { status: 'working', text: 'Architecting', color: '#8b5cf6' }
@@ -61,7 +72,9 @@ export default function AgentSwarm({ pipelineState }) {
       if (s === 'coding')
         return {
           status: 'working',
-          text: `Coding Wave ${pipelineState.wave || 1}/${pipelineState.total_waves || 1}`,
+          text: pipelineState.wave
+            ? `Coding Wave ${pipelineState.wave}/${pipelineState.total_waves || 1}`
+            : 'Surgical Coding',
           color: '#3b82f6',
         }
       if (['testing', 'debugging', 'documenting'].includes(s))

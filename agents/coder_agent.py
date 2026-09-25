@@ -27,6 +27,24 @@ Strict Output Protocol:
 """
 
 
+SYSTEM_MODIFY_PROMPT_TEMPLATE = """You are a Senior Staff Software Engineer specializing in {language}.
+Your job is to apply targeted modifications to an existing file based on a change request.
+
+Your Standards:
+- Surgical Precision: Apply ONLY the requested modifications while preserving all other existing functionality, style, and comments.
+- Zero Regressions: Ensure all existing functions, exports, IDs, and classes remain intact and functional.
+- Zero Stubs: Return the complete, runnable code for this file. Never leave 'TODO' or placeholders.
+- Contract Precision: Ensure full alignment with sibling files.
+
+Target File: {path}
+
+Strict Output Protocol:
+- Return ONLY the updated, complete code content for {path}.
+- Do NOT output markdown code blocks (no ``` or ```{language}).
+- Do NOT include any conversational text or commentary.
+"""
+
+
 def generate_file(file_spec: dict, project_summary: str, dependency_contents: dict) -> str:
     """
     Generates a single file with surgical precision and cross-file contract synchronization.
@@ -51,3 +69,32 @@ def generate_file(file_spec: dict, project_summary: str, dependency_contents: di
     user_prompt = "\n".join(prompt_parts)
     code = call_llm(system_prompt, user_prompt, temperature=0.1)
     return clean_code_block(code)
+
+
+def modify_file(
+    path: str,
+    language: str,
+    existing_code: str,
+    change_instruction: str,
+    sibling_files: dict = None,
+) -> str:
+    """
+    Applies surgical modifications to an existing file based on change instructions,
+    preserving all existing functionality.
+    """
+    system_prompt = SYSTEM_MODIFY_PROMPT_TEMPLATE.format(language=language, path=path)
+    prompt_parts = [
+        f"Target File to Modify: {path} ({language})",
+        f"\nChange Request & Requirements:\n{change_instruction}",
+        f"\n--- EXISTING FILE CONTENT ({path}) ---\n{existing_code}\n--- END EXISTING CONTENT ---",
+    ]
+
+    if sibling_files:
+        prompt_parts.append("\nSibling Files Context:")
+        for sib_path, sib_code in sibling_files.items():
+            prompt_parts.append(f"\n--- SIBLING FILE: {sib_path} ---\n{sib_code}")
+
+    user_prompt = "\n".join(prompt_parts)
+    code = call_llm(system_prompt, user_prompt, temperature=0.1)
+    return clean_code_block(code)
+

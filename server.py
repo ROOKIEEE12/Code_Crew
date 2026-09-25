@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from orchestrator import run_pipeline
+from orchestrator import run_pipeline, run_iteration_pipeline
 from config import OUTPUT_DIR, MODEL_NAME
 
 app = FastAPI(
@@ -146,6 +146,57 @@ async def stream_build(prompt: str = Query(..., min_length=2)):
             )
 
     # Launch pipeline in background thread executor
+    loop.run_in_executor(None, run_job)
+
+    async def event_generator():
+        while True:
+            item = await event_queue.get()
+            if item.get("event") == "done":
+                yield {"event": "done", "data": "{}"}
+                break
+            yield item
+
+    return EventSourceResponse(event_generator())
+
+
+@app.get("/api/projects/{project_id}/iterate/stream")
+async def stream_iteration(project_id: str, prompt: str = Query(..., min_length=2)):
+    """
+    Streams selective multi-agent iteration on an existing project via SSE.
+    Manager Agent dynamically routes work to only required agents.
+    """
+    event_queue = asyncio.Queue()
+
+    def sync_event_callback(event_type: str, data: dict):
+        asyncio.run_coroutine_threadsafe(
+            event_queue.put({"event": event_type, "data": json.dumps(data)}),
+            loop,
+        )
+
+    loop = asyncio.get_running_loop()
+
+    def run_job():
+        try:
+            run_iteration_pipeline(
+                project_id,
+                prompt,
+                log=lambda m: None,
+                on_event=sync_event_callback,
+            )
+        except Exception as e:
+            asyncio.run_coroutine_threadsafe(
+                event_queue.put({
+                    "event": "error",
+                    "data": json.dumps({"error": str(e)}),
+                }),
+                loop,
+            )
+        finally:
+            asyncio.run_coroutine_threadsafe(
+                event_queue.put({"event": "done", "data": "{}"}),
+                loop,
+            )
+
     loop.run_in_executor(None, run_job)
 
     async def event_generator():
