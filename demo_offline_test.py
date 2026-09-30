@@ -24,16 +24,8 @@ correct no matter how the retry loop or thread scheduling plays out.
 """
 
 import re
-import sys
 import threading
 from unittest.mock import patch
-
-if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
 
 PLAN_JSON = """{
   "project_name": "demo-counter-website",
@@ -119,7 +111,7 @@ _qa_call_count = {"n": 0}
 _lock = threading.Lock()
 
 
-def fake_call_llm(system_prompt, user_prompt):
+def fake_call_llm(system_prompt, user_prompt, role="coder", **kwargs):
     if "Planner Agent" in system_prompt:
         return PLAN_JSON
 
@@ -142,6 +134,18 @@ def fake_call_llm(system_prompt, user_prompt):
 
     if "debugging specialist" in system_prompt:
         return FIXED_JS
+
+    if "Code Auditor" in system_prompt or role == "auditor":
+        import json
+        match = re.search(r"--- CODE TO AUDIT ---\n(.*?)\n--- END OF CODE ---", user_prompt, re.DOTALL)
+        code_str = match.group(1) if match else ""
+        return json.dumps({
+            "fact_check_passed": True,
+            "lines_analyzed": len(code_str.splitlines()),
+            "unnecessary_lines_removed": 0,
+            "audit_notes": "Audited cleanly with zero bloat.",
+            "refined_code": code_str
+        })
 
     if "Review/Documentation Agent" in system_prompt:
         return README_CONTENT

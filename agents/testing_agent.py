@@ -37,7 +37,7 @@ normal cases and realistic edge cases.
 Rules:
 - Return ONLY Python test code. No explanations, no markdown fences.
 - The module will be importable using its filename without the .py
-   extension. Import exactly what you need from it.
+  extension. Import exactly what you need from it.
 - Write at least 3 test functions.
 """
 
@@ -85,7 +85,7 @@ def _run_python_tests(files: dict) -> dict:
         for path, f in python_files.items():
             module_name = os.path.splitext(os.path.basename(path))[0]
             prompt = f"Module name to import from: {module_name}\n\nCode:\n{f['code']}"
-            raw = call_llm(PYTEST_SYSTEM_PROMPT, prompt)
+            raw = call_llm(PYTEST_SYSTEM_PROMPT, prompt, role="tester")
             test_code = clean_code_block(raw)
             generated_tests[path] = test_code
 
@@ -111,7 +111,7 @@ def _llm_review(plan: dict, files: dict) -> dict:
     parts = [f"Project summary: {plan.get('summary', '')}", ""]
     for path, f in files.items():
         parts.append(f"--- {path} ({f['language']}) ---\n{f['code']}\n")
-    raw = call_llm(QA_REVIEW_SYSTEM_PROMPT, "\n".join(parts))
+    raw = call_llm(QA_REVIEW_SYSTEM_PROMPT, "\n".join(parts), role="tester")
     try:
         review = parse_json_response(raw)
         review.setdefault("passed", True)

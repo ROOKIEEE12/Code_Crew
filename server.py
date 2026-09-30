@@ -23,6 +23,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from orchestrator import run_pipeline, run_iteration_pipeline
 from config import OUTPUT_DIR, MODEL_NAME
+from agents.model_manager import model_pool
 
 app = FastAPI(
     title="CodeCrew API",
@@ -44,14 +45,58 @@ class BuildRequest(BaseModel):
     prompt: str
 
 
+class AuditRequest(BaseModel):
+    path: str
+    code: str
+    language: Optional[str] = "text"
+    description: Optional[str] = ""
+
+
+class TestRequest(BaseModel):
+    path: str
+    code: str
+    language: Optional[str] = "python"
+
+
+class RefactorRequest(BaseModel):
+    path: str
+    code: str
+    language: Optional[str] = "text"
+    instruction: str
+
+
+class DebugRequest(BaseModel):
+    path: str
+    code: str
+    language: Optional[str] = "text"
+    error: str
+
+
+class ExplainRequest(BaseModel):
+    path: str
+    code: str
+    language: Optional[str] = "text"
+
+
+
 @app.get("/api/health")
 def health_check():
+    status = model_pool.get_status_report()
     return {
         "status": "online",
         "model": MODEL_NAME,
         "output_dir": OUTPUT_DIR,
         "version": "2.0.0",
+        "active_models": status["active_models"],
+        "total_models": status["total_models"],
+        "keys_configured": status["keys_configured"],
     }
+
+
+@app.get("/api/models/status")
+def get_models_status():
+    """Returns live telemetry of all Gemini free models, cooldowns, and auto-refresh."""
+    return model_pool.get_status_report()
 
 
 @app.get("/api/agents")
@@ -109,6 +154,108 @@ def get_agents():
             },
         ]
     }
+
+
+@app.post("/api/agent/audit")
+def run_agent_audit(req: AuditRequest):
+    """Executes Principal Code Auditor Agent on the provided code."""
+    from agents.auditor_agent import audit_and_refine
+    try:
+        result = audit_and_refine(
+            path=req.path,
+            language=req.language,
+            code=req.code,
+            file_description=req.description or "Audit and eliminate bloat/inconsistencies",
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/agent/test")
+def run_agent_test(req: TestRequest):
+    """Executes QA Tester Agent to generate test suite for code."""
+    from agents.llm_client import call_llm
+    from agents.code_utils import clean_code_block
+    import os
+
+    try:
+        module_name = os.path.splitext(os.path.basename(req.path))[0]
+        if req.language == "python":
+            prompt = f"Module name to import: {module_name}\nTarget file: {req.path}\n\nCode:\n{req.code}"
+            system_prompt = (
+                "You are the QA Automation Architect (Testing Agent). Write comprehensive PyTest tests "
+                "covering happy paths, edge cases, error conditions, and mocks where needed. "
+                "Return ONLY valid runnable Python code with no markdown fences and no chatter."
+            )
+            raw = call_llm(system_prompt, prompt, role="tester")
+            test_code = clean_code_block(raw)
+            return {"status": "success", "test_file": f"test_{module_name}.py", "code": test_code}
+        else:
+            prompt = f"File: {req.path} ({req.language})\n\nCode:\n{req.code}"
+            system_prompt = (
+                f"You are the QA Automation Architect (Testing Agent). Write an automated unit test suite for this {req.language} code. "
+                "Return ONLY valid test code with no markdown fences and no chatter."
+            )
+            raw = call_llm(system_prompt, prompt, role="tester")
+            test_code = clean_code_block(raw)
+            return {"status": "success", "test_file": f"test_{module_name}.test.js", "code": test_code}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/agent/refactor")
+def run_agent_refactor(req: RefactorRequest):
+    """Executes Senior Staff Polyglot Coder Agent to refactor code."""
+    from agents.llm_client import call_llm
+    from agents.code_utils import clean_code_block
+
+    try:
+        system_prompt = (
+            f"You are a Senior Staff Software Engineer specializing in {req.language}. "
+            "Refactor and improve the provided code strictly following the instruction. "
+            "Maintain surgical economy: zero stubs, zero bloat, complete runnable implementation. "
+            "Return ONLY the updated code, no markdown fences, no conversational text."
+        )
+        user_prompt = f"File: {req.path}\nInstruction: {req.instruction}\n\nCode:\n{req.code}"
+        raw = call_llm(system_prompt, user_prompt, role="coder")
+        return {"status": "success", "code": clean_code_block(raw)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/agent/debug")
+def run_agent_debug(req: DebugRequest):
+    """Executes Root-Cause Triage Specialist (Debugger Agent) to patch errors."""
+    from agents.debugger_agent import debug
+    try:
+        fixed = debug(
+            path=req.path,
+            language=req.language,
+            code=req.code,
+            issue_description=req.error,
+            sibling_summary="VS Code active workspace document diagnostics",
+        )
+        return {"status": "success", "code": fixed}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/agent/explain")
+def run_agent_explain(req: ExplainRequest):
+    """Executes Lead Systems Architect to explain architecture and flow."""
+    from agents.llm_client import call_llm
+    try:
+        system_prompt = (
+            "You are the Principal Systems Architect in CodeCrew. Explain the architectural design, "
+            "data flow, potential bottlenecks, and key mechanisms of this code in clear, concise bullet points."
+        )
+        user_prompt = f"File: {req.path} ({req.language})\n\nCode:\n{req.code}"
+        explanation = call_llm(system_prompt, user_prompt, role="planner")
+        return {"status": "success", "explanation": explanation}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.get("/api/build/stream")

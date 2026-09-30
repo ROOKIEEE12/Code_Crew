@@ -29,6 +29,7 @@ from agents import (
     reviewer_agent,
 )
 from agents.llm_client import call_llm
+from agents.model_manager import model_pool
 from agents.code_utils import parse_json_response
 from config import MAX_DEBUG_RETRIES, MAX_PARALLEL_WORKERS, OUTPUT_DIR
 
@@ -36,14 +37,21 @@ from config import MAX_DEBUG_RETRIES, MAX_PARALLEL_WORKERS, OUTPUT_DIR
 def _run_concurrently(jobs: dict, log, label: str) -> dict:
     """
     Executes multiple worker tasks concurrently using Python's ThreadPoolExecutor.
+    Uses micro-staggering to prevent sudden token bursts on the free-tier quota bucket.
     """
+    import time
     if not jobs:
         return {}
 
-    log(f"[{label}] Launching {len(jobs)} agent(s) simultaneously: {', '.join(jobs.keys())}")
+    log(f"[{label}] Launching {len(jobs)} agent(s): {', '.join(jobs.keys())}")
     results = {}
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL_WORKERS) as executor:
-        future_to_key = {executor.submit(fn): key for key, fn in jobs.items()}
+        future_to_key = {}
+        for idx, (key, fn) in enumerate(jobs.items()):
+            if idx > 0:
+                time.sleep(0.35)  # 350ms micro-stagger avoids simultaneous token spike
+            future_to_key[executor.submit(fn)] = key
+
         for future in as_completed(future_to_key):
             key = future_to_key[future]
             results[key] = future.result()
@@ -97,6 +105,13 @@ def run_pipeline(user_request: str, log=print, on_event=None) -> dict:
         activity_log.append(line)
         log(line)
         dispatch_event("log", {"agent": agent_name, "message": message, "meta": meta or {}})
+
+    def model_event_forwarder(event_type: str, data: dict):
+        dispatch_event(event_type, data)
+        if "message" in data:
+            step("TokenGuardian", data["message"])
+
+    model_pool.set_event_callback(model_event_forwarder)
 
     step("Orchestrator", f"Received build request: '{user_request}'")
     dispatch_event("status", {"state": "planning", "message": "Architect is analyzing the request..."})
@@ -299,7 +314,7 @@ def _triage_change_request(change_request: str, existing_files: dict, project_su
         f"User Change Request:\n{change_request}"
     )
 
-    raw = call_llm(TRIAGE_SYSTEM_PROMPT, prompt, temperature=0.1)
+    raw = call_llm(TRIAGE_SYSTEM_PROMPT, prompt, temperature=0.1, role="triage")
     plan = parse_json_response(raw)
 
     plan.setdefault("intent", "feature")
@@ -346,6 +361,13 @@ def run_iteration_pipeline(
         activity_log.append(line)
         log(line)
         dispatch_event("log", {"agent": agent_name, "message": message, "meta": meta or {}})
+
+    def model_event_forwarder(event_type: str, data: dict):
+        dispatch_event(event_type, data)
+        if "message" in data:
+            step("TokenGuardian", data["message"])
+
+    model_pool.set_event_callback(model_event_forwarder)
 
     # 1. Load project files from disk
     project_dir = os.path.join(OUTPUT_DIR, project_id)

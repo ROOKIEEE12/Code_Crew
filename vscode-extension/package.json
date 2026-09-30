@@ -1,0 +1,134 @@
+{
+  "name": "codecrew-extension",
+  "displayName": "CodeCrew - Multi-Agent Autonomous Studio",
+  "description": "Deploy an autonomous crew of specialized AI agents (Architect, Coder, Auditor, QA Tester, Debugger) inside VS Code with Gemini multi-model pool rotation.",
+  "version": "1.0.0",
+  "publisher": "codecrew",
+  "icon": "assets/icon.png",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Machine Learning",
+    "Testing"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codecrew-sidebar",
+          "title": "CodeCrew AI",
+          "icon": "assets/activitybar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "codecrew-sidebar": [
+        {
+          "type": "webview",
+          "id": "codecrew.agentView",
+          "name": "CodeCrew Autonomous Studio"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "codecrew.openSidebar",
+        "title": "CodeCrew: Open Agent Studio Panel",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "codecrew.auditFile",
+        "title": "CodeCrew: Audit Active File (Line-by-Line Fact-Check)",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "codecrew.generateTests",
+        "title": "CodeCrew: Generate QA Test Suite for Active File",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "codecrew.refactorSelection",
+        "title": "CodeCrew: Refactor Selected Code (Staff Coder)",
+        "icon": "$(wand)"
+      },
+      {
+        "command": "codecrew.debugWithCrew",
+        "title": "CodeCrew: Surgical Bug Fix (Debugger Agent)",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "codecrew.checkModelHealth",
+        "title": "CodeCrew: Inspect Gemini Model Pool & Telemetry",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "codecrew.startServer",
+        "title": "CodeCrew: Start Agent Engine Server"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "codecrew.auditFile",
+          "group": "codecrew@1",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "codecrew.generateTests",
+          "group": "codecrew@2",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "codecrew.refactorSelection",
+          "group": "codecrew@3",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "codecrew.debugWithCrew",
+          "group": "codecrew@4",
+          "when": "editorTextFocus"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CodeCrew",
+      "properties": {
+        "codecrew.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8000",
+          "description": "FastAPI Agent Engine URL"
+        },
+        "codecrew.autoStartServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically launch CodeCrew backend Python engine if not running"
+        },
+        "codecrew.autoWriteFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically write generated files to the active VS Code workspace"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
+    "watch": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/vsce": "^2.24.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0"
+  }
+}

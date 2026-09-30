@@ -64,7 +64,7 @@ def audit_and_refine(
             prompt_parts.append(f"\n--- {dep_path} ---\n{dep_code[:1000]}")
 
     user_prompt = "\n".join(prompt_parts)
-    raw = call_llm(SYSTEM_PROMPT, user_prompt, temperature=0.1)
+    raw = call_llm(SYSTEM_PROMPT, user_prompt, temperature=0.1, role="auditor")
 
     try:
         result = parse_json_response(raw)

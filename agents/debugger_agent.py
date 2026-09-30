@@ -1,41 +1,40 @@
 """
 debugger_agent.py
 ------------------
-Role: Principal Debugging Specialist & Root-Cause Resolution Lead.
-Mission: Perform surgical root-cause analysis on failing files and deliver
-clean, verified fixes without regressions or code bloat.
+Job: fix ONE broken file. It receives that file's own code, a description
+of what's wrong (syntax error output, failing test output, or a QA review
+comment — whatever the Testing Agent found), and a short reminder of what
+its sibling files look like, then returns a corrected, complete version.
+
+Multiple broken files can be fixed at the same time by the Orchestrator
+(each gets its own Debugging Agent call), the same way two different bugs
+in two different files could be picked up by two developers at once.
 """
 
 from agents.llm_client import call_llm
 from agents.code_utils import clean_code_block
 
-SYSTEM_PROMPT_TEMPLATE = """You are the Principal Debugging Specialist in {language}.
-Your job is to diagnose the root cause of an issue and deliver a surgical fix.
+SYSTEM_PROMPT_TEMPLATE = """You are a senior {language} debugging specialist.
+You will receive one file's code and a description of what's wrong with it
+(a syntax error, a failing test, or a code review finding). Find the real
+root cause and return a corrected, COMPLETE version of the file.
 
-Your Standards:
-- Diagnostic Precision: Address the exact underlying failure (syntax error, failed assertion,
-  or contract mismatch). Never patch symptoms or suppress errors.
-- Minimal Diff Philosophy: Preserve all existing, working functionality. Change ONLY what
-  is necessary to fix the defect.
-- Fact Verification: Double check any APIs or syntax changes to ensure they are 100% correct.
-- Zero Bloat: Do not add unnecessary wrapper functions or filler code.
-
-Target File: {path}
-
-Strict Output Protocol:
-- Return ONLY the corrected, complete file content.
-- Do NOT output markdown code blocks.
-- Do NOT add explanations or conversational commentary.
+Rules:
+- Return ONLY the corrected file content. No explanations, no markdown
+  fences, no commentary.
+- Fix the actual underlying problem — never just silence an error without
+  addressing why it happened.
+- Keep everything about the file that already works unchanged.
 """
 
 
 def debug(path: str, language: str, code: str, issue_description: str, sibling_summary: str) -> str:
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(language=language, path=path)
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(language=language)
     user_prompt = (
-        f"Target File: {path}\n\n"
-        f"Current Code:\n{code}\n\n"
-        f"Failure Diagnostics / QA Findings:\n{issue_description}\n\n"
-        f"Sibling Project Context:\n{sibling_summary}"
+        f"File: {path}\n\n"
+        f"Current code:\n{code}\n\n"
+        f"What's wrong:\n{issue_description}\n\n"
+        f"Other files in this project (for context, do not rewrite these):\n{sibling_summary}"
     )
-    fixed_code = call_llm(system_prompt, user_prompt, temperature=0.1)
+    fixed_code = call_llm(system_prompt, user_prompt, role="debugger")
     return clean_code_block(fixed_code)

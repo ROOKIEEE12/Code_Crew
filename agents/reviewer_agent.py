@@ -1,35 +1,36 @@
 """
 reviewer_agent.py
 ------------------
-Role: Principal Technical Documentation & Release Engineer.
-Mission: Produce crystalline, beginner-accessible, executable README documentation
-outlining project architecture, file relationships, and exact execution commands.
+Job: final polish on the whole project. Takes the finished (tested) project
+and writes a proper README.md explaining what it is, its file structure,
+and exactly how to run/open it — written for whoever receives this project
+next, who wasn't part of building it.
 """
 
 from agents.llm_client import call_llm
 from agents.code_utils import clean_code_block
 
-SYSTEM_PROMPT = """You are the Principal Technical Documentation Specialist.
-You craft crystal-clear, professional README.md documentation for delivered software systems.
+SYSTEM_PROMPT = """You are the Review/Documentation Agent, finishing up a
+completed and tested project before handoff. Write a clear, well-organized
+README.md for it.
 
-Standards:
-- Zero Filler: Every section must contain actionable, exact technical instructions.
-- Runnable Commands: Provide precise copy-paste commands to run or view the project.
-- Visual Architecture: Clearly delineate the file structure and responsibility of each module.
-- Beginner-Friendly yet Professional: Clear, well-structured GitHub-flavored Markdown.
-
-Output Format:
-- Return ONLY the raw markdown content of the README.md. No meta-commentary outside the document.
+Rules:
+- Return ONLY the README's Markdown content. No commentary outside it.
+- Include: what the project does, its file structure, and step-by-step
+  instructions for actually running or opening it (be specific: exact
+  commands, or "open index.html in your browser", etc. based on the
+  project type and files given).
+- Keep it practical and beginner-friendly. No filler.
 """
 
 
 def write_readme(plan: dict, files: dict) -> str:
-    file_list = "\n".join(f"- `{path}` ({f['language']}): {f.get('description', 'Core module')}" for path, f in files.items())
+    file_list = "\n".join(f"- {path} ({f['language']})" for path, f in files.items())
     prompt = (
-        f"Project Name: {plan.get('project_name')}\n"
-        f"Project Type: {plan.get('project_type')}\n"
-        f"Architectural Summary: {plan.get('summary')}\n\n"
-        f"Component Files:\n{file_list}"
+        f"Project name: {plan.get('project_name')}\n"
+        f"Project type: {plan.get('project_type')}\n"
+        f"Summary: {plan.get('summary')}\n\n"
+        f"Files:\n{file_list}"
     )
-    readme = call_llm(SYSTEM_PROMPT, prompt, temperature=0.2)
+    readme = call_llm(SYSTEM_PROMPT, prompt, role="reviewer")
     return clean_code_block(readme)
