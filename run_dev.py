@@ -27,10 +27,15 @@ def start_dev():
     print(f"Production Host: http://127.0.0.1:8000/ (FastAPI serves built React)")
     print("-" * 60)
 
-    # Start FastAPI
+    # Start FastAPI with UTF-8 encoding enabled
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+
     backend_proc = subprocess.Popen(
         [python_exe, "-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8000", "--reload"],
         cwd=root_dir,
+        env=env,
     )
 
     # Start Vite Frontend

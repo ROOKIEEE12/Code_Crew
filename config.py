@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+GEMINI_API_KEYS = [k.strip() for k in os.getenv("GEMINI_API_KEY", "").split(",") if k.strip()]
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 # Every model below is on OpenRouter's genuinely free tier (its ID ends in
 # ":free" — no card, no trial period, resets daily) as of 2026, and each
@@ -31,30 +33,28 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 # Override this list any time in .env (comma-separated) — no code changes
 # needed. Check https://openrouter.ai/models?q=free for the current list;
 # free models occasionally rotate out with little notice.
+# Active, verified free models on OpenRouter as of 2026.
+# Each model ends in ":free" or uses OpenRouter's dynamic free routing.
 _default_pool = (
-    "qwen/qwen3-coder:free,"
-    "nvidia/nemotron-3-ultra-550b-a55b:free,"
-    "openai/gpt-oss-120b:free,"
-    "deepseek/deepseek-chat:free"
+    "poolside/laguna-s-2.1:free,"
+    "liquid/lfm-2.5-2.6b:free,"
+    "nvidia/nemotron-3.5-lightning:free,"
+    "openrouter/free"
 )
 MODEL_POOL = [m.strip() for m in os.getenv("GEMINI_MODEL_POOL", os.getenv("MODEL_POOL", _default_pool)).split(",") if m.strip()]
 
-# Which model each agent role tries FIRST — matching each agent's actual
-# job to the model best suited for it, the way a real engineering manager
-# would assign the right person to the right kind of task. Every role
-# still falls back through the rest of MODEL_POOL above if its preferred
-# model is busy, so this only decides the starting point, not a hard limit.
+# Role-to-model assignments: poolside laguna delivers instant JSON and zero-bloat code
 ROLE_PRIMARY_MODEL = {
-    "planner": "nvidia/nemotron-3-ultra-550b-a55b:free",   # reasoning/judgment task
-    "coder": "qwen/qwen3-coder:free",                       # a pure coding task
-    "auditor": "qwen/qwen3-coder:free",                     # code fact-checking & audit
-    "tester": "openai/gpt-oss-120b:free",                   # reviewing/reasoning task
-    "debugger": "qwen/qwen3-coder:free",                    # also a pure coding task
-    "reviewer": "openai/gpt-oss-120b:free",                 # writing/summarizing task
+    "planner": "poolside/laguna-s-2.1:free",    # High-accuracy structured plan & JSON
+    "coder": "poolside/laguna-s-2.1:free",      # Precision code generation & syntax
+    "auditor": "poolside/laguna-s-2.1:free",    # Fact verification & code optimization
+    "tester": "poolside/laguna-s-2.1:free",     # Structured QA review & PyTest synthesis
+    "debugger": "poolside/laguna-s-2.1:free",   # Surgical bug repairs
+    "reviewer": "poolside/laguna-s-2.1:free",   # Documentation & README generation
 }
 
 # Compatibility alias for components expecting a single default model name
-MODEL_NAME = ROLE_PRIMARY_MODEL.get("coder", "qwen/qwen3-coder:free")
+MODEL_NAME = ROLE_PRIMARY_MODEL.get("coder", "poolside/laguna-s-2.1:free")
 
 # How many times the Debugging Agent will try to fix a broken file before
 # the Orchestrator gives up on it and moves on with the best attempt.

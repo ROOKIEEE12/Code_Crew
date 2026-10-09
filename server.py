@@ -12,8 +12,16 @@ import io
 import json
 import os
 import queue
+import sys
 import zipfile
 from typing import Optional
+
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -456,6 +464,28 @@ def download_project_zip(project_id: str):
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename={project_id}.zip"},
     )
+
+
+@app.get("/api/projects/{project_id}/preview/{file_path:path}")
+@app.get("/api/projects/{project_id}/preview")
+def preview_project_file(project_id: str, file_path: str = "index.html"):
+    """Serves generated project files live with relative asset resolution."""
+    folder_path = os.path.abspath(os.path.join(OUTPUT_DIR, project_id))
+    if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    target_file = file_path if file_path else "index.html"
+    full_path = os.path.abspath(os.path.join(folder_path, target_file))
+    if not full_path.startswith(folder_path):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if os.path.isdir(full_path):
+        full_path = os.path.join(full_path, "index.html")
+
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail=f"File '{file_path}' not found in project")
+
+    return FileResponse(full_path)
 
 
 # Serve React app when built

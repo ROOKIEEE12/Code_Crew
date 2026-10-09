@@ -10,36 +10,58 @@ import re
 
 def clean_code_block(text: str) -> str:
     """
-    LLMs love wrapping code in ```python ... ``` fences even when you ask
-    them not to — this strips that off so we always end up with clean,
-    runnable source code.
+    Strips thinking tags (<think>...</think>) and markdown fences (```python ... ```)
+    so we always obtain clean, runnable code.
     """
-    text = text.strip()
+    if not text:
+        return ""
+
+    # Remove reasoning/thinking blocks if present
+    text = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+
+    # If code is enclosed in markdown code fences anywhere in the output
+    fence_match = re.search(r"```(?:\w+)?\n([\s\S]*?)\n```", text)
+    if fence_match:
+        return fence_match.group(1).strip()
+
+    # Standard fallback fence stripping if it starts with ```
     if text.startswith("```"):
         lines = text.split("\n")
-        lines = lines[1:]  # drop the opening ```language line
+        lines = lines[1:]
         if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]  # drop the closing ```
+            lines = lines[:-1]
         text = "\n".join(lines)
+
     return text.strip()
 
 
 def parse_json_response(text: str) -> dict:
     """
-    The Planner and the QA Reviewer agents are asked to respond with pure
-    JSON, but LLMs sometimes wrap it in markdown fences or add a stray
-    sentence before/after anyway. This tries a few increasingly forgiving
-    strategies to still get a usable dict out of it.
+    Parses JSON from model responses, handling reasoning preambles,
+    markdown fences, or explanatory text before/after.
     """
-    text = clean_code_block(text)
+    if not text:
+        raise ValueError("Cannot parse JSON from empty response.")
 
+    # Remove reasoning tags first
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+
+    # Strategy 1: Look for explicit ```json ... ``` or ``` ... ``` block
+    block_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned)
+    if block_match:
+        try:
+            return json.loads(block_match.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+
+    # Strategy 2: Direct JSON parsing
     try:
-        return json.loads(text)
+        return json.loads(clean_code_block(cleaned))
     except json.JSONDecodeError:
         pass
 
-    # Fallback: grab the outermost { ... } block and try again.
-    match = re.search(r"\{.*\}", text, re.DOTALL)
+    # Strategy 3: Grab the outermost { ... } block
+    match = re.search(r"\{[\s\S]*\}", cleaned)
     if match:
         try:
             return json.loads(match.group(0))

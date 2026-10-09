@@ -96,7 +96,8 @@ def _run_python_tests(files: dict) -> dict:
         try:
             result = subprocess.run(
                 [sys.executable, "-m", "pytest", ".", "-v"],
-                cwd=tmp_dir, capture_output=True, text=True, timeout=45,
+                cwd=tmp_dir, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=45,
             )
             passed = result.returncode == 0
             output = result.stdout + "\n" + result.stderr

@@ -14,7 +14,15 @@ import {
   X,
   Sparkles,
   Play,
+  Layers,
+  GitCompare,
+  RotateCw,
+  ExternalLink,
+  Columns,
+  Code2,
 } from 'lucide-react'
+import ArchitectureGraph from './ArchitectureGraph'
+import DiffViewer from './DiffViewer'
 
 export default function EditorWorkspace({
   files = {},
@@ -28,9 +36,13 @@ export default function EditorWorkspace({
   livePreview,
   onToggleLivePreview,
   onSelectSamplePrompt,
+  plan,
+  pipelineState = {},
 }) {
   const [activeBottomTab, setActiveBottomTab] = useState('terminal') // 'terminal' | 'tests' | 'audit' | 'problems'
+  const [workspaceMode, setWorkspaceMode] = useState('editor') // 'editor' | 'split' | 'preview' | 'graph' | 'diff'
   const [copied, setCopied] = useState(false)
+  const [previewKey, setPreviewKey] = useState(0)
 
   const fileKeys = Object.keys(files || {})
   const currentFile = files[selectedFile] || (fileKeys.length > 0 ? files[fileKeys[0]] : null)
@@ -46,36 +58,73 @@ export default function EditorWorkspace({
 
   // Generate srcDoc for live interactive web preview
   const generatePreviewDoc = () => {
-    const html = files['index.html']?.code || Object.values(files).find(f => f.language === 'html')?.code || ''
-    const css = files['styles.css']?.code || files['style.css']?.code || Object.values(files).find(f => f.language === 'css')?.code || ''
-    const js = files['script.js']?.code || files['app.js']?.code || Object.values(files).find(f => f.language === 'javascript')?.code || ''
+    const html =
+      files['index.html']?.code ||
+      Object.values(files).find((f) => f.language === 'html')?.code ||
+      ''
+    const css =
+      files['styles.css']?.code ||
+      files['style.css']?.code ||
+      Object.values(files).find((f) => f.language === 'css')?.code ||
+      ''
+    const js =
+      files['script.js']?.code ||
+      files['app.js']?.code ||
+      Object.values(files).find((f) => f.language === 'javascript')?.code ||
+      ''
 
-    if (!html) return '<html><body style="font-family:sans-serif;padding:20px;color:#888;">No HTML file found for live preview.</body></html>'
+    if (!html) {
+      return `<!DOCTYPE html><html><body style="background:#0f172a;color:#94a3b8;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:90vh;margin:0;"><div style="text-align:center;"><h2>No HTML Entry Point Found</h2><p>This project might be a Python script or backend service.</p></div></body></html>`
+    }
 
     return `
       <!DOCTYPE html>
       <html>
         <head>
-          <style>${css}</style>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <style>
+            ${css}
+          </style>
         </head>
         <body>
           ${html.replace(/<link[^>]*rel=["']stylesheet["'][^>]*>/gi, '')}
-          <script>${js}<\/script>
+          <script>
+            try {
+              ${js}
+            } catch (err) {
+              console.error("Runtime error in sandbox:", err);
+            }
+          <\/script>
         </body>
       </html>
     `
   }
 
+  const handleOpenNewTab = () => {
+    const doc = generatePreviewDoc()
+    const win = window.open()
+    if (win) {
+      win.document.write(doc)
+      win.document.close()
+    }
+  }
+
+  const hasHtml = Boolean(files['index.html'] || Object.values(files).some((f) => f.language === 'html'))
+
   return (
     <main className="ide-editor-workspace">
-      {/* 1. Editor Tabs Header */}
+      {/* 1. Editor Tabs & Controls Bar */}
       <div className="editor-tab-bar">
         <div className="tabs-scroll-area">
           {fileKeys.map((path) => (
             <div
               key={path}
               className={`editor-tab ${selectedFile === path ? 'active' : ''}`}
-              onClick={() => onSelectFile(path)}
+              onClick={() => {
+                onSelectFile(path)
+                if (workspaceMode === 'graph') setWorkspaceMode('editor')
+              }}
             >
               <FileCode size={13} color={selectedFile === path ? '#818cf8' : '#64748b'} />
               <span className="tab-title">{path}</span>
@@ -85,13 +134,71 @@ export default function EditorWorkspace({
           {readme && (
             <div
               className={`editor-tab ${selectedFile === 'README.md' ? 'active' : ''}`}
-              onClick={() => onSelectFile('README.md')}
+              onClick={() => {
+                onSelectFile('README.md')
+                if (workspaceMode === 'graph') setWorkspaceMode('editor')
+              }}
             >
               <span style={{ color: '#38bdf8' }}>📄</span>
               <span className="tab-title">README.md</span>
             </div>
           )}
         </div>
+
+        {/* Workspace Mode Selector */}
+        {fileKeys.length > 0 && (
+          <div className="workspace-mode-pills">
+            <button
+              className={`mode-pill ${workspaceMode === 'editor' ? 'active' : ''}`}
+              onClick={() => setWorkspaceMode('editor')}
+              title="Code View"
+            >
+              <Code2 size={12} />
+              <span>Code</span>
+            </button>
+
+            {hasHtml && (
+              <>
+                <button
+                  className={`mode-pill ${workspaceMode === 'split' ? 'active' : ''}`}
+                  onClick={() => setWorkspaceMode('split')}
+                  title="Split Code & Live Sandbox Preview"
+                >
+                  <Columns size={12} />
+                  <span>Split View</span>
+                </button>
+                <button
+                  className={`mode-pill ${workspaceMode === 'preview' ? 'active' : ''}`}
+                  onClick={() => setWorkspaceMode('preview')}
+                  title="Full Live Web App"
+                >
+                  <Eye size={12} />
+                  <span>Live App</span>
+                </button>
+              </>
+            )}
+
+            <button
+              className={`mode-pill ${workspaceMode === 'graph' ? 'active' : ''}`}
+              onClick={() => setWorkspaceMode('graph')}
+              title="Living Swarm Architecture Graph"
+            >
+              <Layers size={12} />
+              <span>Architecture</span>
+            </button>
+
+            {selectedFile && !isReadme && (
+              <button
+                className={`mode-pill ${workspaceMode === 'diff' ? 'active' : ''}`}
+                onClick={() => setWorkspaceMode('diff')}
+                title="Specialist Patch Diff Viewer"
+              >
+                <GitCompare size={12} />
+                <span>Diff</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Tab Bar Action Buttons */}
         <div className="tab-bar-actions">
@@ -105,43 +212,37 @@ export default function EditorWorkspace({
               <span>{copied ? 'Copied' : 'Copy'}</span>
             </button>
           )}
-
-          {files['index.html'] && (
-            <button
-              className={`tab-action-btn ${livePreview ? 'active-highlight' : ''}`}
-              onClick={onToggleLivePreview}
-              title="Toggle Live Web Browser Preview"
-            >
-              {livePreview ? <EyeOff size={13} /> : <Eye size={13} />}
-              <span>{livePreview ? 'Editor' : 'Live Preview'}</span>
-            </button>
-          )}
         </div>
       </div>
 
-      {/* 2. Main Editor Content / Live Preview / Welcome Screen */}
+      {/* 2. Main Viewport Area */}
       <div className="editor-main-viewport">
         {fileKeys.length === 0 ? (
-          /* Antigravity Welcome Screen */
+          /* Welcome Screen */
           <div className="ide-welcome-screen">
             <div className="welcome-logo-container">
               <div className="antigravity-brand-mark">
                 <span style={{ fontSize: '2.5rem' }}>▲</span>
               </div>
-              <h1 className="welcome-title">Antigravity Multi-Agent Studio</h1>
+              <h1 className="welcome-title">CodeCrew Autonomous Swarm Studio</h1>
               <p className="welcome-subtitle">
-                Autonomous specialist agents (Architect, Coder, Auditor, Tester, Debugger, Writer) working together.
+                Isolated specialist agents (Architect, Coder, Auditor, Tester, Debugger, Writer)
+                building multi-file verified applications.
               </p>
             </div>
 
             <div className="welcome-shortcuts">
               <div className="shortcut-row">
                 <span className="shortcut-label">Deploy Swarm</span>
-                <span className="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span>
+                <span className="shortcut-keys">
+                  <kbd>Ctrl</kbd> + <kbd>Enter</kbd>
+                </span>
               </div>
               <div className="shortcut-row">
                 <span className="shortcut-label">Toggle Terminal</span>
-                <span className="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>`</kbd></span>
+                <span className="shortcut-keys">
+                  <kbd>Ctrl</kbd> + <kbd>`</kbd>
+                </span>
               </div>
             </div>
 
@@ -166,8 +267,83 @@ export default function EditorWorkspace({
               </div>
             </div>
           </div>
-        ) : livePreview ? (
-          /* Live Sandbox Preview */
+        ) : workspaceMode === 'graph' ? (
+          /* Architecture Topology Graph */
+          <ArchitectureGraph
+            plan={plan}
+            files={files}
+            pipelineState={pipelineState}
+            selectedFile={selectedFile}
+            onSelectFile={(path) => {
+              onSelectFile(path)
+              setWorkspaceMode('editor')
+            }}
+          />
+        ) : workspaceMode === 'diff' ? (
+          /* Surgical Diff Viewer */
+          <DiffViewer
+            filename={selectedFile}
+            oldCode={currentFile?.audit?.original_code || currentFile?.code || ''}
+            newCode={currentFile?.code || ''}
+          />
+        ) : workspaceMode === 'split' ? (
+          /* Side-by-Side Split View */
+          <div className="split-viewport-container">
+            {/* Left 50%: Code Editor */}
+            <div className="split-half code-half">
+              <div className="code-viewer-container">
+                <div className="line-numbers-col">
+                  {codeContent.split('\n').map((_, index) => (
+                    <div key={index} className="line-num">
+                      {index + 1}
+                    </div>
+                  ))}
+                </div>
+                <pre className="code-content-col">
+                  <code>{codeContent}</code>
+                </pre>
+              </div>
+            </div>
+
+            {/* Right 50%: Live Web Sandbox */}
+            <div className="split-half preview-half">
+              <div className="live-preview-container">
+                <div className="preview-browser-bar">
+                  <div className="browser-dots">
+                    <span className="dot red"></span>
+                    <span className="dot yellow"></span>
+                    <span className="dot green"></span>
+                  </div>
+                  <div className="browser-address">http://localhost:3000/index.html</div>
+                  <div className="preview-controls-right">
+                    <button
+                      className="browser-tool-btn"
+                      onClick={() => setPreviewKey((k) => k + 1)}
+                      title="Reload sandbox"
+                    >
+                      <RotateCw size={12} />
+                    </button>
+                    <button
+                      className="browser-tool-btn"
+                      onClick={handleOpenNewTab}
+                      title="Open in new window"
+                    >
+                      <ExternalLink size={12} />
+                    </button>
+                  </div>
+                </div>
+                <iframe
+                  key={previewKey}
+                  className="preview-iframe"
+                  title="Live Split Preview"
+                  srcDoc={generatePreviewDoc()}
+                  sandbox="allow-scripts allow-modals"
+                />
+              </div>
+            </div>
+          </div>
+        ) : workspaceMode === 'preview' ? (
+          /* Full Live Sandbox Preview */
           <div className="live-preview-container">
             <div className="preview-browser-bar">
               <div className="browser-dots">
@@ -176,8 +352,25 @@ export default function EditorWorkspace({
                 <span className="dot green"></span>
               </div>
               <div className="browser-address">http://localhost:3000/index.html (Sandbox Live Run)</div>
+              <div className="preview-controls-right">
+                <button
+                  className="browser-tool-btn"
+                  onClick={() => setPreviewKey((k) => k + 1)}
+                  title="Reload sandbox"
+                >
+                  <RotateCw size={12} />
+                </button>
+                <button
+                  className="browser-tool-btn"
+                  onClick={handleOpenNewTab}
+                  title="Open in new window"
+                >
+                  <ExternalLink size={12} />
+                </button>
+              </div>
             </div>
             <iframe
+              key={previewKey}
               className="preview-iframe"
               title="Live Project Preview"
               srcDoc={generatePreviewDoc()}
@@ -201,7 +394,7 @@ export default function EditorWorkspace({
         )}
       </div>
 
-      {/* 3. Bottom Terminal & QA Panel (Collapsible) */}
+      {/* 3. Bottom Terminal & QA Panel */}
       {terminalOpen && (
         <div className="ide-bottom-dock">
           <div className="bottom-dock-header">
@@ -218,33 +411,28 @@ export default function EditorWorkspace({
                 className={`dock-tab-btn ${activeBottomTab === 'tests' ? 'active' : ''}`}
                 onClick={() => setActiveBottomTab('tests')}
               >
-                <FlaskConical size={13} color="#f59e0b" />
-                <span>QA & PYTEST</span>
+                <FlaskConical size={13} />
+                <span>TESTS & QA</span>
+                {testingResult && (
+                  <span
+                    className={`mini-pill ${testingResult.passed ? 'success' : 'fail'}`}
+                  >
+                    {testingResult.passed ? 'PASSED' : 'ISSUES'}
+                  </span>
+                )}
               </button>
 
               <button
                 className={`dock-tab-btn ${activeBottomTab === 'audit' ? 'active' : ''}`}
                 onClick={() => setActiveBottomTab('audit')}
               >
-                <ShieldCheck size={13} color="#10b981" />
-                <span>FACT-CHECK & AUDIT</span>
-              </button>
-
-              <button
-                className={`dock-tab-btn ${activeBottomTab === 'problems' ? 'active' : ''}`}
-                onClick={() => setActiveBottomTab('problems')}
-              >
-                <AlertTriangle size={13} color="#38bdf8" />
-                <span>PROBLEMS (0)</span>
+                <ShieldCheck size={13} />
+                <span>FACT-CHECK AUDIT</span>
               </button>
             </div>
 
-            <div className="dock-controls">
-              <button
-                className="icon-btn-ghost"
-                onClick={onToggleTerminal}
-                title="Hide Bottom Terminal"
-              >
+            <div className="dock-actions">
+              <button className="icon-btn-ghost" onClick={onToggleTerminal} title="Close Panel">
                 <X size={14} />
               </button>
             </div>
@@ -252,16 +440,14 @@ export default function EditorWorkspace({
 
           <div className="bottom-dock-content">
             {activeBottomTab === 'terminal' && (
-              <div className="terminal-stream">
+              <div className="terminal-log-view">
                 {logs.length === 0 ? (
-                  <div className="terminal-idle">
-                    <span style={{ color: '#6366f1' }}>PS C:\codecrew&gt;</span> Awaiting multi-agent pipeline launch...
-                  </div>
+                  <div className="empty-terminal-hint">No swarm logs yet.</div>
                 ) : (
                   logs.map((log, idx) => (
-                    <div key={idx} className="terminal-log-row">
-                      <span className="term-prompt">&gt;</span>
-                      <span className="term-text">{log}</span>
+                    <div key={idx} className="terminal-line">
+                      <span className="log-prefix">&gt;</span>
+                      <span className="log-text">{log}</span>
                     </div>
                   ))
                 )}
@@ -269,50 +455,88 @@ export default function EditorWorkspace({
             )}
 
             {activeBottomTab === 'tests' && (
-              <div className="tests-stream">
-                <div style={{ marginBottom: '8px', color: '#f59e0b', fontWeight: 600 }}>
-                  Automated QA Validation & Syntax Suite
-                </div>
-                {testingResult?.syntax_results ? (
-                  Object.entries(testingResult.syntax_results).map(([p, res]) => (
-                    <div key={p} className="test-row">
-                      <span>{p}</span>
-                      <span style={{ color: res.passed ? '#10b981' : '#f87171' }}>
-                        {res.passed ? '✓ Passed' : '✗ Error'}
-                      </span>
-                    </div>
-                  ))
+              <div className="qa-report-view">
+                {!testingResult ? (
+                  <div className="empty-terminal-hint">
+                    No test report available yet. Run a build to see automated QA results.
+                  </div>
                 ) : (
-                  <div style={{ color: 'var(--text-dim)' }}>No test execution results yet.</div>
-                )}
-                {testingResult?.pytest?.output && (
-                  <pre className="pytest-output">{testingResult.pytest.output}</pre>
+                  <div className="qa-report-grid">
+                    <div className="qa-card">
+                      <span className="qa-card-title">Syntax & Static Analysis</span>
+                      <div className="qa-card-items">
+                        {Object.entries(testingResult.syntax_results || {}).map(([p, r]) => (
+                          <div key={p} className="qa-status-row">
+                            <span>{p}</span>
+                            <span
+                              className={`status-pill ${
+                                r.passed ? 'pill-green' : r.checked ? 'pill-red' : 'pill-gray'
+                              }`}
+                            >
+                              {r.passed ? 'PASSED' : r.checked ? 'FAILED' : 'SKIPPED'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="qa-card">
+                      <span className="qa-card-title">Sandboxed PyTest Suite</span>
+                      <div className="qa-card-body">
+                        {testingResult.pytest?.ran ? (
+                          <pre className="test-output-box">{testingResult.pytest.output}</pre>
+                        ) : (
+                          <span style={{ color: '#64748b' }}>No Python test suite required.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="qa-card">
+                      <span className="qa-card-title">LLM Multi-File Contract Audit</span>
+                      <div className="qa-card-body">
+                        {testingResult.review?.issues?.length > 0 ? (
+                          testingResult.review.issues.map((iss, i) => (
+                            <div key={i} className="review-issue-item">
+                              <span className={`severity-tag ${iss.severity}`}>
+                                {iss.severity}
+                              </span>
+                              <span className="issue-file">{iss.file}:</span>
+                              <span className="issue-desc">{iss.problem}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <span style={{ color: '#10b981' }}>
+                            ✓ Zero cross-file inconsistencies or logic defects found.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
 
             {activeBottomTab === 'audit' && (
-              <div className="audit-stream">
-                <div style={{ marginBottom: '8px', color: '#10b981', fontWeight: 600 }}>
-                  Auditor Line-by-Line Verification Log
+              <div className="audit-detail-view">
+                <div className="audit-file-cards">
+                  {Object.entries(files).map(([p, f]) => {
+                    const audit = f.audit
+                    if (!audit) return null
+                    return (
+                      <div key={p} className="audit-file-block">
+                        <div className="audit-block-top">
+                          <span className="audit-file-name">{p}</span>
+                          <span className="lines-removed-tag">
+                            -{audit.unnecessary_lines_removed || 0} unneeded lines eliminated
+                          </span>
+                        </div>
+                        <p className="audit-notes-text">
+                          {audit.audit_notes || 'Code verified cleanly.'}
+                        </p>
+                      </div>
+                    )
+                  })}
                 </div>
-                {fileKeys.map((p) => {
-                  const audit = files[p]?.audit
-                  if (!audit) return null
-                  return (
-                    <div key={p} className="audit-row">
-                      <strong>{p}:</strong>
-                      <span>{audit.audit_notes || 'Verified against APIs & eliminated dead code.'}</span>
-                      <span style={{ color: '#f87171' }}>-{audit.unnecessary_lines_removed || 0}L</span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {activeBottomTab === 'problems' && (
-              <div className="problems-stream">
-                <span style={{ color: '#10b981' }}>✓ No problems or syntax errors detected in workspace.</span>
               </div>
             )}
           </div>

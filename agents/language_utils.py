@@ -55,13 +55,13 @@ class _HTMLValidityParser(html.parser.HTMLParser):
 
 
 def _check_python(code: str) -> dict:
-    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
         f.write(code)
         path = f.name
     try:
         result = subprocess.run(
             [sys.executable, "-m", "py_compile", path],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
         )
         return {"checked": True, "passed": result.returncode == 0, "output": result.stderr}
     finally:
@@ -74,12 +74,12 @@ def _check_node_syntax(code: str, suffix: str) -> dict:
     node = shutil.which("node")
     if not node:
         return {"checked": False, "passed": True, "output": "Node.js not installed — skipped."}
-    with tempfile.NamedTemporaryFile(suffix=suffix, mode="w", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=suffix, mode="w", delete=False, encoding="utf-8") as f:
         f.write(code)
         path = f.name
     try:
         result = subprocess.run(
-            [node, "--check", path], capture_output=True, text=True, timeout=15,
+            [node, "--check", path], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
         )
         return {"checked": True, "passed": result.returncode == 0, "output": result.stderr}
     finally:

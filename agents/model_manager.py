@@ -17,30 +17,41 @@ from typing import Dict, List, Any
 
 from config import OPENROUTER_API_KEY, MODEL_POOL, ROLE_PRIMARY_MODEL
 
-# Supported OpenRouter free models metadata
 OPENROUTER_MODEL_INFO = {
-    "qwen/qwen3-coder:free": {
-        "name": "Qwen 3 Coder (Free)",
-        "lab": "Alibaba",
-        "description": "Purpose-built for software engineering; premier free model for writing & debugging code.",
-        "preferred_role": "coder, debugger",
+    "openrouter/free": {
+        "name": "OpenRouter Free Auto-Router",
+        "lab": "OpenRouter",
+        "description": "Dynamic multi-model router that automatically selects available high-performance free models.",
+        "preferred_role": "planner, tester, reviewer",
     },
-    "nvidia/nemotron-3-ultra-550b-a55b:free": {
-        "name": "NVIDIA Nemotron 3 Ultra (Free)",
+    "poolside/laguna-s-2.1:free": {
+        "name": "Poolside Laguna S 2.1 (Free)",
+        "lab": "Poolside",
+        "description": "Specialized model for precise software engineering, structured JSON, and code synthesis.",
+        "preferred_role": "coder, auditor, debugger",
+    },
+    "nvidia/nemotron-3.5-lightning:free": {
+        "name": "NVIDIA Nemotron 3.5 Lightning (Free)",
         "lab": "NVIDIA",
-        "description": "High-parameter reasoning model; superior architectural planning & deconstruction.",
-        "preferred_role": "planner",
+        "description": "High-throughput accelerated reasoning model for deep analysis and edge-case testing.",
+        "preferred_role": "planner, tester",
     },
-    "openai/gpt-oss-120b:free": {
-        "name": "OpenAI GPT-OSS 120B (Free)",
-        "lab": "OpenAI",
-        "description": "Reliable open-weight general intelligence model; excellent for QA review & documentation.",
-        "preferred_role": "tester, reviewer",
+    "liquid/lfm-2.5-2.6b:free": {
+        "name": "Liquid LFM 2.5 (Free)",
+        "lab": "Liquid AI",
+        "description": "Efficient non-transformer architecture optimized for low-latency completions.",
+        "preferred_role": "fallback pool",
     },
-    "deepseek/deepseek-chat:free": {
-        "name": "DeepSeek Chat (Free)",
-        "lab": "DeepSeek",
-        "description": "Resilient multi-turn coding and reasoning model from an independent lab.",
+    "dots-studio/dots-3-note-preview:free": {
+        "name": "Dots 3 Note (Free)",
+        "lab": "Dots Studio",
+        "description": "High-context open-weight reasoning model for fallback processing.",
+        "preferred_role": "fallback pool",
+    },
+    "apodex/apodex-1.1-mini:free": {
+        "name": "Apodex 1.1 Mini (Free)",
+        "lab": "Apodex",
+        "description": "Compact inference model for swift task verification and fallback.",
         "preferred_role": "fallback pool",
     },
 }

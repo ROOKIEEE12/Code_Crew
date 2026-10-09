@@ -15,8 +15,8 @@ from datetime import datetime
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -103,7 +103,14 @@ def run_pipeline(user_request: str, log=print, on_event=None) -> dict:
     def step(agent_name: str, message: str, meta: dict = None):
         line = f"[{agent_name}] {message}"
         activity_log.append(line)
-        log(line)
+        try:
+            log(line)
+        except Exception:
+            try:
+                safe_line = line.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace")
+                print(safe_line)
+            except Exception:
+                pass
         dispatch_event("log", {"agent": agent_name, "message": message, "meta": meta or {}})
 
     def model_event_forwarder(event_type: str, data: dict):
@@ -359,7 +366,14 @@ def run_iteration_pipeline(
     def step(agent_name: str, message: str, meta: dict = None):
         line = f"[{agent_name}] {message}"
         activity_log.append(line)
-        log(line)
+        try:
+            log(line)
+        except Exception:
+            try:
+                safe_line = line.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace")
+                print(safe_line)
+            except Exception:
+                pass
         dispatch_event("log", {"agent": agent_name, "message": message, "meta": meta or {}})
 
     def model_event_forwarder(event_type: str, data: dict):
