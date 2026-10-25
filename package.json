@@ -1,18 +1,17 @@
 {
   "name": "codecrew-workspace",
-  "version": "2.0.0",
-  "description": "CodeCrew Multi-Agent Autonomous Software Studio & VS Code Extension",
+  "version": "3.0.0",
+  "description": "CodeCrew: a multi-agent AI system for collaborative software development",
   "private": true,
   "scripts": {
-    "dev": "python run_dev.py",
+    "dev": "python scripts/dev.py",
     "server": "python server.py",
-    "ext:dev": "npm --prefix vscode-extension run watch",
-    "ext:build": "npm --prefix vscode-extension run build",
-    "ext:package": "npm --prefix vscode-extension run package",
-    "frontend:dev": "npm --prefix frontend run dev",
-    "frontend:build": "npm --prefix frontend run build"
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "gen:api": "npm --prefix web run gen:api",
+    "test": "python -m pytest tests",
+    "eval": "python -m eval.run",
+    "ext:build": "npm --prefix vscode-extension run build"
   },
-  "keywords": ["ai-agents", "vscode-extension", "gemini-models", "multi-agent-system", "codecrew"],
-  "author": "CodeCrew Team",
   "license": "MIT"
 }

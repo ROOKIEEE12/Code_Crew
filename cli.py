@@ -1,45 +1,53 @@
 """
 cli.py
 ------
-The simplest possible way to try CodeCrew — no browser needed.
-Run: python cli.py
+Run CodeCrew from the terminal.
+
+    python cli.py "a function that converts roman numerals"
+    python cli.py --iterate <project-id> "also support lowercase input"
 """
 
+import argparse
 import sys
-from orchestrator import run_pipeline
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+from codecrew import orchestrator  # noqa: E402
 
 
-def main():
-    print("=== CodeCrew: Multi-Agent Software Engineering Team ===")
-    request = input("Describe what you want built: ").strip()
+def main() -> int:
+    parser = argparse.ArgumentParser(description="CodeCrew multi-agent software team")
+    parser.add_argument("request", nargs="*", help="what to build (or change, with --iterate)")
+    parser.add_argument("--iterate", metavar="PROJECT_ID", help="apply a change request to an existing project")
+    args = parser.parse_args()
 
+    request = " ".join(args.request).strip() or input("Describe what you want built: ").strip()
     if not request:
-        print("You didn't type anything — try again.")
-        return
+        print("You didn't type anything.")
+        return 1
 
-    print()
-    result = run_pipeline(request)
+    mode = "iterate" if args.iterate else "build"
+    state = orchestrator.new_run(request, mode=mode, project_id=args.iterate)
+    state = orchestrator.run_sync(state, log=print)
 
     print("\n" + "=" * 60)
-    print(f"PROJECT: {result['plan']['project_name']}  ({result['plan']['project_type']})")
-    print("=" * 60)
-    print(result["plan"]["summary"])
-
-    print(f"\nFiles ({len(result['files'])}):")
-    for path in result["files"]:
-        print(f"  - {path}")
-
-    status = "ALL CHECKS PASSED ✅" if result["tests_passed"] else "SOME ISSUES REMAIN ⚠️ (best attempt saved)"
-    print(f"\nStatus: {status}")
-    print(f"Saved to: {result['project_dir']}")
+    if state.status == "error":
+        print(f"ERROR: {state.error}")
+        return 2
+    v = state.verification
+    print(f"Project : {state.project_id}  ({state.status})")
+    print(f"Result  : {v.summary if v else 'not verified'}")
+    if v and not v.passed:
+        print("Remaining issues:")
+        for i in v.issues:
+            if i.severity == "error":
+                print(f"  - [{i.source}] {i.test_id or i.file or ''}: {i.message.splitlines()[0][:140]}")
+    print(f"Saved to: {state.project_dir}")
+    print(f"LLM calls: {state.usage.calls}, tokens in/out: {state.usage.input_tokens}/{state.usage.output_tokens}")
+    return 0 if state.status == "succeeded" else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

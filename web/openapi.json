@@ -1,0 +1,1412 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "CodeCrew API",
+  "description": "Multi-agent AI system for collaborative software development.",
+  "version": "3.0.0"
+ },
+ "paths": {
+  "/api/health": {
+   "get": {
+    "summary": "Health",
+    "operationId": "health_api_health_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/providers": {
+   "get": {
+    "summary": "Providers",
+    "operationId": "providers_api_providers_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agents": {
+   "get": {
+    "summary": "Agents",
+    "operationId": "agents_api_agents_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs": {
+   "post": {
+    "summary": "Create Run",
+    "operationId": "create_run_api_runs_post",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CreateRun"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunState"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "summary": "List Runs",
+    "operationId": "list_runs_api_runs_get",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 200,
+       "minimum": 1,
+       "default": 50,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs/{run_id}": {
+   "get": {
+    "summary": "Get Run",
+    "operationId": "get_run_api_runs__run_id__get",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunState"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs/{run_id}/cancel": {
+   "post": {
+    "summary": "Cancel Run",
+    "operationId": "cancel_run_api_runs__run_id__cancel_post",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs/{run_id}/events": {
+   "get": {
+    "summary": "Run Events",
+    "operationId": "run_events_api_runs__run_id__events_get",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "After"
+      }
+     },
+     {
+      "name": "last-event-id",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Last-Event-Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects": {
+   "get": {
+    "summary": "List Projects",
+    "operationId": "list_projects_api_projects_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}": {
+   "get": {
+    "summary": "Get Project",
+    "operationId": "get_project_api_projects__project_id__get",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Delete Project",
+    "operationId": "delete_project_api_projects__project_id__delete",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/runs": {
+   "post": {
+    "summary": "Iterate Project",
+    "operationId": "iterate_project_api_projects__project_id__runs_post",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/IterateRun"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunState"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/download": {
+   "get": {
+    "summary": "Download Project",
+    "operationId": "download_project_api_projects__project_id__download_get",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/preview/{file_path}": {
+   "get": {
+    "summary": "Preview",
+    "description": "Serves generated files for the live preview. The CSP sandbox gives the\npage an opaque origin, so generated scripts cannot call this API.",
+    "operationId": "preview_api_projects__project_id__preview__file_path__get",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "file_path",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "File Path"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/eval": {
+   "get": {
+    "summary": "List Eval Results",
+    "description": "Baseline-vs-CodeCrew benchmark results produced by `python -m eval.run`.",
+    "operationId": "list_eval_results_api_eval_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/eval/{name}": {
+   "get": {
+    "summary": "Get Eval Result",
+    "operationId": "get_eval_result_api_eval__name__get",
+    "parameters": [
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Name"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "AcceptanceCriterion": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Short id: AC1, AC2, ..."
+     },
+     "description": {
+      "type": "string",
+      "title": "Description",
+      "description": "One observable, checkable behaviour."
+     },
+     "verification": {
+      "type": "string",
+      "enum": [
+       "automated_test",
+       "static_check",
+       "manual"
+      ],
+      "title": "Verification"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "description",
+     "verification"
+    ],
+    "title": "AcceptanceCriterion"
+   },
+   "ActivityEntry": {
+    "properties": {
+     "ts": {
+      "type": "number",
+      "title": "Ts"
+     },
+     "agent": {
+      "type": "string",
+      "title": "Agent"
+     },
+     "message": {
+      "type": "string",
+      "title": "Message"
+     }
+    },
+    "type": "object",
+    "required": [
+     "agent",
+     "message"
+    ],
+    "title": "ActivityEntry"
+   },
+   "CreateRun": {
+    "properties": {
+     "requirement": {
+      "type": "string",
+      "maxLength": 8000,
+      "minLength": 3,
+      "title": "Requirement"
+     }
+    },
+    "type": "object",
+    "required": [
+     "requirement"
+    ],
+    "title": "CreateRun"
+   },
+   "DebugRound": {
+    "properties": {
+     "round": {
+      "type": "integer",
+      "title": "Round"
+     },
+     "targeted_issues": {
+      "type": "integer",
+      "title": "Targeted Issues"
+     },
+     "changed_files": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Changed Files"
+     },
+     "disputes": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Disputes",
+      "default": []
+     },
+     "score_before": {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array",
+      "title": "Score Before"
+     },
+     "score_after": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Score After"
+     },
+     "kept": {
+      "type": "boolean",
+      "title": "Kept",
+      "default": true
+     }
+    },
+    "type": "object",
+    "required": [
+     "round",
+     "targeted_issues",
+     "changed_files",
+     "score_before"
+    ],
+    "title": "DebugRound"
+   },
+   "FileCheck": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "passed",
+       "failed",
+       "unchecked"
+      ],
+      "title": "Status"
+     },
+     "tool": {
+      "type": "string",
+      "title": "Tool",
+      "default": ""
+     },
+     "output": {
+      "type": "string",
+      "title": "Output",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "status"
+    ],
+    "title": "FileCheck"
+   },
+   "FileSpec": {
+    "properties": {
+     "path": {
+      "type": "string",
+      "title": "Path",
+      "description": "Relative POSIX path inside the project, e.g. 'src/app.py'."
+     },
+     "language": {
+      "type": "string",
+      "enum": [
+       "python",
+       "javascript",
+       "typescript",
+       "html",
+       "css",
+       "json",
+       "markdown",
+       "text"
+      ],
+      "title": "Language"
+     },
+     "purpose": {
+      "type": "string",
+      "title": "Purpose"
+     },
+     "depends_on": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Depends On",
+      "description": "Other planned file paths this file must stay consistent with."
+     },
+     "functions": {
+      "items": {
+       "$ref": "#/components/schemas/FunctionSpec"
+      },
+      "type": "array",
+      "title": "Functions",
+      "description": "Public functions/classes. Empty for markup/style files."
+     },
+     "testable": {
+      "type": "boolean",
+      "title": "Testable",
+      "description": "True if this file exposes importable logic that unit tests can call."
+     }
+    },
+    "type": "object",
+    "required": [
+     "path",
+     "language",
+     "purpose",
+     "depends_on",
+     "functions",
+     "testable"
+    ],
+    "title": "FileSpec"
+   },
+   "FunctionSpec": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Exact function/class name, as it will be imported by tests."
+     },
+     "signature": {
+      "type": "string",
+      "title": "Signature",
+      "description": "Full signature, e.g. 'def add(a: int, b: int) -> int'."
+     },
+     "behavior": {
+      "type": "string",
+      "title": "Behavior",
+      "description": "What it does, including inputs, outputs and return values."
+     },
+     "edge_cases": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Edge Cases",
+      "description": "Edge cases and errors it must handle, e.g. 'raises ValueError on negative n'."
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "signature",
+     "behavior",
+     "edge_cases"
+    ],
+    "title": "FunctionSpec"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "type": "array",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "title": "HTTPValidationError"
+   },
+   "Issue": {
+    "properties": {
+     "source": {
+      "type": "string",
+      "enum": [
+       "syntax",
+       "contract",
+       "test",
+       "lint",
+       "security",
+       "spec"
+      ],
+      "title": "Source"
+     },
+     "severity": {
+      "type": "string",
+      "enum": [
+       "error",
+       "warning"
+      ],
+      "title": "Severity"
+     },
+     "file": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "File"
+     },
+     "line": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Line"
+     },
+     "message": {
+      "type": "string",
+      "title": "Message"
+     },
+     "test_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Test Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "source",
+     "severity",
+     "message"
+    ],
+    "title": "Issue"
+   },
+   "IterateRun": {
+    "properties": {
+     "request": {
+      "type": "string",
+      "maxLength": 8000,
+      "minLength": 3,
+      "title": "Request"
+     }
+    },
+    "type": "object",
+    "required": [
+     "request"
+    ],
+    "title": "IterateRun"
+   },
+   "RunState": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "mode": {
+      "type": "string",
+      "enum": [
+       "build",
+       "iterate"
+      ],
+      "title": "Mode",
+      "default": "build"
+     },
+     "requirement": {
+      "type": "string",
+      "title": "Requirement"
+     },
+     "project_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project Id"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "queued",
+       "running",
+       "succeeded",
+       "failed",
+       "cancelled",
+       "error"
+      ],
+      "title": "Status",
+      "default": "queued"
+     },
+     "phase": {
+      "type": "string",
+      "title": "Phase",
+      "default": "queued"
+     },
+     "spec": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SpecOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "triage": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TriageOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "files": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object",
+      "title": "Files",
+      "default": {}
+     },
+     "tests": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object",
+      "title": "Tests",
+      "default": {}
+     },
+     "verification": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Verification"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "best_round": {
+      "type": "integer",
+      "title": "Best Round",
+      "default": 0
+     },
+     "debug_rounds": {
+      "items": {
+       "$ref": "#/components/schemas/DebugRound"
+      },
+      "type": "array",
+      "title": "Debug Rounds",
+      "default": []
+     },
+     "disputes_used": {
+      "type": "integer",
+      "title": "Disputes Used",
+      "default": 0
+     },
+     "readme": {
+      "type": "string",
+      "title": "Readme",
+      "default": ""
+     },
+     "activity": {
+      "items": {
+       "$ref": "#/components/schemas/ActivityEntry"
+      },
+      "type": "array",
+      "title": "Activity",
+      "default": []
+     },
+     "usage": {
+      "$ref": "#/components/schemas/Usage",
+      "default": {
+       "calls": 0,
+       "input_tokens": 0,
+       "output_tokens": 0,
+       "by_model": {}
+      }
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "project_dir": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project Dir"
+     },
+     "created_at": {
+      "type": "number",
+      "title": "Created At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "requirement"
+    ],
+    "title": "RunState"
+   },
+   "SpecOut": {
+    "properties": {
+     "project_name": {
+      "type": "string",
+      "title": "Project Name",
+      "description": "short-kebab-case-name"
+     },
+     "project_type": {
+      "type": "string",
+      "enum": [
+       "script",
+       "cli_tool",
+       "web_app",
+       "backend_api",
+       "library",
+       "other"
+      ],
+      "title": "Project Type"
+     },
+     "summary": {
+      "type": "string",
+      "title": "Summary"
+     },
+     "run_instructions": {
+      "type": "string",
+      "title": "Run Instructions",
+      "description": "Exact command or action to run/open the project."
+     },
+     "files": {
+      "items": {
+       "$ref": "#/components/schemas/FileSpec"
+      },
+      "type": "array",
+      "title": "Files"
+     },
+     "acceptance_criteria": {
+      "items": {
+       "$ref": "#/components/schemas/AcceptanceCriterion"
+      },
+      "type": "array",
+      "title": "Acceptance Criteria"
+     },
+     "assumptions": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Assumptions",
+      "description": "Ambiguities in the request and how they were resolved."
+     }
+    },
+    "type": "object",
+    "required": [
+     "project_name",
+     "project_type",
+     "summary",
+     "run_instructions",
+     "files",
+     "acceptance_criteria",
+     "assumptions"
+    ],
+    "title": "SpecOut"
+   },
+   "TestCaseResult": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "file": {
+      "type": "string",
+      "title": "File"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "outcome": {
+      "type": "string",
+      "enum": [
+       "passed",
+       "failed",
+       "error",
+       "skipped"
+      ],
+      "title": "Outcome"
+     },
+     "message": {
+      "type": "string",
+      "title": "Message",
+      "default": ""
+     },
+     "details": {
+      "type": "string",
+      "title": "Details",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "file",
+     "name",
+     "outcome"
+    ],
+    "title": "TestCaseResult"
+   },
+   "TestRun": {
+    "properties": {
+     "runner": {
+      "type": "string",
+      "title": "Runner"
+     },
+     "ran": {
+      "type": "boolean",
+      "title": "Ran"
+     },
+     "cases": {
+      "items": {
+       "$ref": "#/components/schemas/TestCaseResult"
+      },
+      "type": "array",
+      "title": "Cases",
+      "default": []
+     },
+     "output": {
+      "type": "string",
+      "title": "Output",
+      "default": ""
+     },
+     "collection_error": {
+      "type": "boolean",
+      "title": "Collection Error",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "runner",
+     "ran"
+    ],
+    "title": "TestRun"
+   },
+   "TriageOut": {
+    "properties": {
+     "intent": {
+      "type": "string",
+      "enum": [
+       "feature",
+       "bugfix",
+       "styling",
+       "documentation",
+       "refactor"
+      ],
+      "title": "Intent"
+     },
+     "explanation": {
+      "type": "string",
+      "title": "Explanation"
+     },
+     "files": {
+      "items": {
+       "$ref": "#/components/schemas/FileSpec"
+      },
+      "type": "array",
+      "title": "Files",
+      "description": "Only the files to create or modify, with their updated spec."
+     },
+     "new_acceptance_criteria": {
+      "items": {
+       "$ref": "#/components/schemas/AcceptanceCriterion"
+      },
+      "type": "array",
+      "title": "New Acceptance Criteria"
+     },
+     "instructions": {
+      "type": "string",
+      "title": "Instructions",
+      "description": "Precise instructions for the coder."
+     },
+     "update_readme": {
+      "type": "boolean",
+      "title": "Update Readme"
+     }
+    },
+    "type": "object",
+    "required": [
+     "intent",
+     "explanation",
+     "files",
+     "new_acceptance_criteria",
+     "instructions",
+     "update_readme"
+    ],
+    "title": "TriageOut"
+   },
+   "Usage": {
+    "properties": {
+     "calls": {
+      "type": "integer",
+      "title": "Calls",
+      "default": 0
+     },
+     "input_tokens": {
+      "type": "integer",
+      "title": "Input Tokens",
+      "default": 0
+     },
+     "output_tokens": {
+      "type": "integer",
+      "title": "Output Tokens",
+      "default": 0
+     },
+     "by_model": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "type": "object",
+      "title": "By Model",
+      "default": {}
+     }
+    },
+    "type": "object",
+    "title": "Usage"
+   },
+   "ValidationError": {
+    "properties": {
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Location"
+     },
+     "msg": {
+      "type": "string",
+      "title": "Message"
+     },
+     "type": {
+      "type": "string",
+      "title": "Error Type"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "ctx": {
+      "type": "object",
+      "title": "Context"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError"
+   },
+   "Verification": {
+    "properties": {
+     "syntax": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/FileCheck"
+      },
+      "type": "object",
+      "title": "Syntax",
+      "default": {}
+     },
+     "issues": {
+      "items": {
+       "$ref": "#/components/schemas/Issue"
+      },
+      "type": "array",
+      "title": "Issues",
+      "default": []
+     },
+     "test_runs": {
+      "items": {
+       "$ref": "#/components/schemas/TestRun"
+      },
+      "type": "array",
+      "title": "Test Runs",
+      "default": []
+     },
+     "passed": {
+      "type": "boolean",
+      "title": "Passed",
+      "default": false
+     },
+     "tests_total": {
+      "type": "integer",
+      "title": "Tests Total",
+      "default": 0
+     },
+     "tests_passed": {
+      "type": "integer",
+      "title": "Tests Passed",
+      "default": 0
+     },
+     "level": {
+      "type": "string",
+      "enum": [
+       "tested",
+       "static_only"
+      ],
+      "title": "Level",
+      "default": "static_only"
+     },
+     "summary": {
+      "type": "string",
+      "title": "Summary",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "Verification"
+   }
+  }
+ }
+}

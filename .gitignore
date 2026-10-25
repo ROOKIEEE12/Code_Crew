@@ -45,6 +45,12 @@ build/
 # Generated Outputs & Temporary files
 generated_projects/*
 !generated_projects/.gitkeep
+codecrew.db*
+eval/results/*
+!eval/results/.gitkeep
+web/.next/
+web/next-env.d.ts
+.claude/settings.local.json
 
 # IDEs & OS Files
 .DS_Store

@@ -1,500 +1,232 @@
 """
 server.py
 ---------
-FastAPI Backend for CodeCrew.
-Provides REST and Server-Sent Events (SSE) endpoints for controlling the
-multi-agent engineering pipeline, streaming live execution, and serving
-generated projects.
+CodeCrew HTTP API (FastAPI). The Next.js frontend in web/ is its only UI.
+
+    python server.py          # http://127.0.0.1:8000, docs at /docs
 """
 
-import asyncio
+from __future__ import annotations
+
 import io
 import json
-import os
-import queue
+import mimetypes
 import sys
 import zipfile
 from typing import Optional
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse
-from pydantic import BaseModel
-from sse_starlette.sse import EventSourceResponse
+from fastapi import FastAPI, Header, HTTPException, Query  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import Response, StreamingResponse  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
+from sse_starlette.sse import EventSourceResponse  # noqa: E402
 
-from orchestrator import run_pipeline, run_iteration_pipeline
-from config import OUTPUT_DIR, MODEL_NAME
-from agents.model_manager import model_pool
+from codecrew import __version__, llm, orchestrator, projects  # noqa: E402
+from codecrew.config import ROOT_DIR, settings  # noqa: E402
+from codecrew.runs import RunManager  # noqa: E402
+from codecrew.schemas import RunState  # noqa: E402
+from codecrew.store import Store  # noqa: E402
+from codecrew.textio import UnsafePathError, safe_relpath  # noqa: E402
 
-app = FastAPI(
-    title="CodeCrew API",
-    description="Multi-Agent Software Engineering Team Backend",
-    version="2.0.0",
-)
-
-# Enable CORS for React frontend
+app = FastAPI(title="CodeCrew API", version=__version__,
+              description="Multi-agent AI system for collaborative software development.")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.cors_origins,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "Last-Event-ID"],
 )
 
+store = Store(settings.db_path)
+store.mark_interrupted()
+manager = RunManager(store)
 
-class BuildRequest(BaseModel):
-    prompt: str
-
-
-class AuditRequest(BaseModel):
-    path: str
-    code: str
-    language: Optional[str] = "text"
-    description: Optional[str] = ""
-
-
-class TestRequest(BaseModel):
-    path: str
-    code: str
-    language: Optional[str] = "python"
+AGENTS = [
+    {"id": "orchestrator", "name": "Orchestrator", "role": "Routes work between agents, enforces retry limits, keeps the best version."},
+    {"id": "planner", "name": "Planner", "role": "Turns the requirement into a technical spec with signatures and acceptance criteria."},
+    {"id": "test_author", "name": "Test Author", "role": "Writes unit tests from the spec before any code exists; rules on test disputes."},
+    {"id": "coder", "name": "Coder", "role": "Implements the spec so the locked tests pass."},
+    {"id": "verifier", "name": "Verifier", "role": "Deterministic checks: syntax, cross-file contracts, spec conformance, lint, security, sandboxed tests."},
+    {"id": "debugger", "name": "Debugger", "role": "Root-causes failures and patches source code; may dispute tests that contradict the spec."},
+    {"id": "reviewer", "name": "Reviewer", "role": "Adds behaviour-neutral docstrings and writes the README with real verification results."},
+]
 
 
-class RefactorRequest(BaseModel):
-    path: str
-    code: str
-    language: Optional[str] = "text"
-    instruction: str
+class CreateRun(BaseModel):
+    requirement: str = Field(min_length=3, max_length=8000)
 
 
-class DebugRequest(BaseModel):
-    path: str
-    code: str
-    language: Optional[str] = "text"
-    error: str
+class IterateRun(BaseModel):
+    request: str = Field(min_length=3, max_length=8000)
 
 
-class ExplainRequest(BaseModel):
-    path: str
-    code: str
-    language: Optional[str] = "text"
+def _project_or_404(project_id: str) -> dict:
+    try:
+        return projects.load(project_id)
+    except projects.ProjectNotFound:
+        raise HTTPException(404, "Project not found")
 
 
+# ---------------------------------------------------------------- meta
 
 @app.get("/api/health")
-def health_check():
-    status = model_pool.get_status_report()
-    return {
-        "status": "online",
-        "model": MODEL_NAME,
-        "output_dir": OUTPUT_DIR,
-        "version": "2.0.0",
-        "active_models": status["active_models"],
-        "total_models": status["total_models"],
-        "keys_configured": status["keys_configured"],
-    }
+def health():
+    status = llm.provider_status()
+    return {"status": "ok", "version": __version__,
+            "providers_configured": [n for n, p in status["providers"].items() if p["configured"]]}
 
 
-@app.get("/api/models/status")
-def get_models_status():
-    """Returns live telemetry of all Gemini free models, cooldowns, and auto-refresh."""
-    return model_pool.get_status_report()
+@app.get("/api/providers")
+def providers():
+    return llm.provider_status()
 
 
 @app.get("/api/agents")
-def get_agents():
-    """Information on each isolated specialist agent in CodeCrew."""
-    return {
-        "agents": [
-            {
-                "id": "planner",
-                "name": "Principal Systems Architect",
-                "role": "Planner Agent",
-                "avatar": "🧠",
-                "description": "Deconstructs prompts into atomic software specifications, technology choices, and dependency graphs.",
-                "color": "#8b5cf6",
-            },
-            {
-                "id": "coder",
-                "name": "Senior Staff Polyglot Engineer",
-                "role": "Coder Agent",
-                "avatar": "💻",
-                "description": "Writes production-grade, zero-bloat code with strict cross-file contract synchronization.",
-                "color": "#3b82f6",
-            },
-            {
-                "id": "auditor",
-                "name": "Principal Code Auditor & Fact-Checker",
-                "role": "Auditor Agent",
-                "avatar": "🔍",
-                "description": "Line-by-line API/method fact verification, eliminates redundant lines, dead code, and hallucinations.",
-                "color": "#10b981",
-            },
-            {
-                "id": "tester",
-                "name": "QA Automation Architect",
-                "role": "Testing Agent",
-                "avatar": "🧪",
-                "description": "Multi-tier testing: syntax validation, dynamic PyTest execution in isolated sandbox, and cross-file contract checks.",
-                "color": "#f59e0b",
-            },
-            {
-                "id": "debugger",
-                "name": "Root-Cause Triage Specialist",
-                "role": "Debugger Agent",
-                "avatar": "🛠️",
-                "description": "Pinpoints exact failure lines and applies surgical patches with minimal diffs and zero regressions.",
-                "color": "#ef4444",
-            },
-            {
-                "id": "reviewer",
-                "name": "Lead Technical Writer",
-                "role": "Reviewer Agent",
-                "avatar": "📝",
-                "description": "Authors crystal-clear, runnable README documentation and installation guides.",
-                "color": "#06b6d4",
-            },
-        ]
-    }
+def agents():
+    return {"agents": AGENTS, "graph": orchestrator.mermaid()}
 
 
-@app.post("/api/agent/audit")
-def run_agent_audit(req: AuditRequest):
-    """Executes Principal Code Auditor Agent on the provided code."""
-    from agents.auditor_agent import audit_and_refine
-    try:
-        result = audit_and_refine(
-            path=req.path,
-            language=req.language,
-            code=req.code,
-            file_description=req.description or "Audit and eliminate bloat/inconsistencies",
-        )
-        return {"status": "success", "result": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# ---------------------------------------------------------------- runs
+
+@app.post("/api/runs", response_model=RunState, status_code=201)
+def create_run(body: CreateRun):
+    return manager.start(body.requirement)
 
 
-@app.post("/api/agent/test")
-def run_agent_test(req: TestRequest):
-    """Executes QA Tester Agent to generate test suite for code."""
-    from agents.llm_client import call_llm
-    from agents.code_utils import clean_code_block
-    import os
-
-    try:
-        module_name = os.path.splitext(os.path.basename(req.path))[0]
-        if req.language == "python":
-            prompt = f"Module name to import: {module_name}\nTarget file: {req.path}\n\nCode:\n{req.code}"
-            system_prompt = (
-                "You are the QA Automation Architect (Testing Agent). Write comprehensive PyTest tests "
-                "covering happy paths, edge cases, error conditions, and mocks where needed. "
-                "Return ONLY valid runnable Python code with no markdown fences and no chatter."
-            )
-            raw = call_llm(system_prompt, prompt, role="tester")
-            test_code = clean_code_block(raw)
-            return {"status": "success", "test_file": f"test_{module_name}.py", "code": test_code}
-        else:
-            prompt = f"File: {req.path} ({req.language})\n\nCode:\n{req.code}"
-            system_prompt = (
-                f"You are the QA Automation Architect (Testing Agent). Write an automated unit test suite for this {req.language} code. "
-                "Return ONLY valid test code with no markdown fences and no chatter."
-            )
-            raw = call_llm(system_prompt, prompt, role="tester")
-            test_code = clean_code_block(raw)
-            return {"status": "success", "test_file": f"test_{module_name}.test.js", "code": test_code}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/runs")
+def list_runs(limit: int = Query(50, ge=1, le=200), project_id: Optional[str] = None):
+    return {"runs": store.list_runs(limit, project_id)}
 
 
-@app.post("/api/agent/refactor")
-def run_agent_refactor(req: RefactorRequest):
-    """Executes Senior Staff Polyglot Coder Agent to refactor code."""
-    from agents.llm_client import call_llm
-    from agents.code_utils import clean_code_block
-
-    try:
-        system_prompt = (
-            f"You are a Senior Staff Software Engineer specializing in {req.language}. "
-            "Refactor and improve the provided code strictly following the instruction. "
-            "Maintain surgical economy: zero stubs, zero bloat, complete runnable implementation. "
-            "Return ONLY the updated code, no markdown fences, no conversational text."
-        )
-        user_prompt = f"File: {req.path}\nInstruction: {req.instruction}\n\nCode:\n{req.code}"
-        raw = call_llm(system_prompt, user_prompt, role="coder")
-        return {"status": "success", "code": clean_code_block(raw)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/runs/{run_id}", response_model=RunState)
+def get_run(run_id: str):
+    state = manager.get(run_id)
+    if not state:
+        raise HTTPException(404, "Run not found")
+    return state
 
 
-@app.post("/api/agent/debug")
-def run_agent_debug(req: DebugRequest):
-    """Executes Root-Cause Triage Specialist (Debugger Agent) to patch errors."""
-    from agents.debugger_agent import debug
-    try:
-        fixed = debug(
-            path=req.path,
-            language=req.language,
-            code=req.code,
-            issue_description=req.error,
-            sibling_summary="VS Code active workspace document diagnostics",
-        )
-        return {"status": "success", "code": fixed}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/runs/{run_id}/cancel")
+def cancel_run(run_id: str):
+    if not manager.cancel(run_id):
+        raise HTTPException(409, "Run is not active")
+    return {"cancelled": True}
 
 
-@app.post("/api/agent/explain")
-def run_agent_explain(req: ExplainRequest):
-    """Executes Lead Systems Architect to explain architecture and flow."""
-    from agents.llm_client import call_llm
-    try:
-        system_prompt = (
-            "You are the Principal Systems Architect in CodeCrew. Explain the architectural design, "
-            "data flow, potential bottlenecks, and key mechanisms of this code in clear, concise bullet points."
-        )
-        user_prompt = f"File: {req.path} ({req.language})\n\nCode:\n{req.code}"
-        explanation = call_llm(system_prompt, user_prompt, role="planner")
-        return {"status": "success", "explanation": explanation}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/runs/{run_id}/events")
+async def run_events(run_id: str, after: int = Query(0, ge=0), last_event_id: Optional[str] = Header(None)):
+    if not manager.get(run_id):
+        raise HTTPException(404, "Run not found")
+    start = max(after, int(last_event_id)) if last_event_id and last_event_id.isdigit() else after
+
+    async def gen():
+        async for e in manager.stream(run_id, start):
+            if e.type == "ping":
+                yield {"comment": "keep-alive"}
+                continue
+            yield {"id": str(e.seq), "event": e.type, "data": json.dumps({"seq": e.seq, "ts": e.ts, **e.data})}
+
+    return EventSourceResponse(gen(), ping=None)
 
 
-
-@app.get("/api/build/stream")
-async def stream_build(prompt: str = Query(..., min_length=2)):
-    """
-    Streams the live execution of CodeCrew agents via Server-Sent Events (SSE).
-    React frontend listens to this stream to render real-time UI state.
-    """
-    event_queue = asyncio.Queue()
-
-    def sync_event_callback(event_type: str, data: dict):
-        # Push into async queue from sync pipeline thread
-        asyncio.run_coroutine_threadsafe(
-            event_queue.put({"event": event_type, "data": json.dumps(data)}),
-            loop,
-        )
-
-    loop = asyncio.get_running_loop()
-
-    def run_job():
-        try:
-            run_pipeline(prompt, log=lambda m: None, on_event=sync_event_callback)
-        except Exception as e:
-            asyncio.run_coroutine_threadsafe(
-                event_queue.put({
-                    "event": "error",
-                    "data": json.dumps({"error": str(e)}),
-                }),
-                loop,
-            )
-        finally:
-            asyncio.run_coroutine_threadsafe(
-                event_queue.put({"event": "done", "data": "{}"}),
-                loop,
-            )
-
-    # Launch pipeline in background thread executor
-    loop.run_in_executor(None, run_job)
-
-    async def event_generator():
-        while True:
-            item = await event_queue.get()
-            if item.get("event") == "done":
-                yield {"event": "done", "data": "{}"}
-                break
-            yield item
-
-    return EventSourceResponse(event_generator())
-
-
-@app.get("/api/projects/{project_id}/iterate/stream")
-async def stream_iteration(project_id: str, prompt: str = Query(..., min_length=2)):
-    """
-    Streams selective multi-agent iteration on an existing project via SSE.
-    Manager Agent dynamically routes work to only required agents.
-    """
-    event_queue = asyncio.Queue()
-
-    def sync_event_callback(event_type: str, data: dict):
-        asyncio.run_coroutine_threadsafe(
-            event_queue.put({"event": event_type, "data": json.dumps(data)}),
-            loop,
-        )
-
-    loop = asyncio.get_running_loop()
-
-    def run_job():
-        try:
-            run_iteration_pipeline(
-                project_id,
-                prompt,
-                log=lambda m: None,
-                on_event=sync_event_callback,
-            )
-        except Exception as e:
-            asyncio.run_coroutine_threadsafe(
-                event_queue.put({
-                    "event": "error",
-                    "data": json.dumps({"error": str(e)}),
-                }),
-                loop,
-            )
-        finally:
-            asyncio.run_coroutine_threadsafe(
-                event_queue.put({"event": "done", "data": "{}"}),
-                loop,
-            )
-
-    loop.run_in_executor(None, run_job)
-
-    async def event_generator():
-        while True:
-            item = await event_queue.get()
-            if item.get("event") == "done":
-                yield {"event": "done", "data": "{}"}
-                break
-            yield item
-
-    return EventSourceResponse(event_generator())
-
+# ---------------------------------------------------------------- projects
 
 @app.get("/api/projects")
 def list_projects():
-    """Returns list of saved generated projects."""
-    if not os.path.exists(OUTPUT_DIR):
-        return {"projects": []}
-
-    entries = []
-    for folder in os.listdir(OUTPUT_DIR):
-        folder_path = os.path.join(OUTPUT_DIR, folder)
-        if os.path.isdir(folder_path):
-            files = []
-            for root, _, filenames in os.walk(folder_path):
-                for fn in filenames:
-                    rel = os.path.relpath(os.path.join(root, fn), folder_path)
-                    files.append(rel)
-
-            has_readme = "README.md" in files
-            stat = os.stat(folder_path)
-            entries.append({
-                "id": folder,
-                "name": folder.rsplit("-", 2)[0] if "-" in folder else folder,
-                "file_count": len(files),
-                "files": files,
-                "created_at": stat.st_ctime,
-                "has_readme": has_readme,
-            })
-
-    entries.sort(key=lambda x: x["created_at"], reverse=True)
-    return {"projects": entries}
+    return {"projects": projects.list_all()}
 
 
 @app.get("/api/projects/{project_id}")
-def get_project_details(project_id: str):
-    """Retrieves full details, files, and README for a specific project."""
-    folder_path = os.path.join(OUTPUT_DIR, project_id)
-    if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
-        raise HTTPException(status_code=404, detail="Project not found")
+def get_project(project_id: str):
+    p = _project_or_404(project_id)
+    return {**p, "spec": p["spec"].model_dump() if p["spec"] else None}
 
-    project_files = {}
-    readme_content = ""
 
-    for root, _, filenames in os.walk(folder_path):
-        for fn in filenames:
-            rel = os.path.relpath(os.path.join(root, fn), folder_path).replace("\\", "/")
-            full = os.path.join(root, fn)
-            try:
-                with open(full, "r", encoding="utf-8") as f:
-                    content = f.read()
-            except Exception:
-                content = "[Binary or unreadable content]"
+@app.post("/api/projects/{project_id}/runs", response_model=RunState, status_code=201)
+def iterate_project(project_id: str, body: IterateRun):
+    p = _project_or_404(project_id)
+    if not p["spec"]:
+        raise HTTPException(422, "This project predates CodeCrew v3 and has no spec; rebuild it to iterate.")
+    return manager.start(body.request, mode="iterate", project_id=project_id)
 
-            if rel == "README.md":
-                readme_content = content
-            else:
-                ext = os.path.splitext(fn)[1].lower()
-                lang_map = {
-                    ".py": "python",
-                    ".js": "javascript",
-                    ".jsx": "javascript",
-                    ".ts": "typescript",
-                    ".html": "html",
-                    ".css": "css",
-                    ".json": "json",
-                    ".md": "markdown",
-                    ".sql": "sql",
-                }
-                project_files[rel] = {
-                    "code": content,
-                    "language": lang_map.get(ext, "text"),
-                }
 
-    return {
-        "id": project_id,
-        "files": project_files,
-        "readme": readme_content,
-    }
+@app.delete("/api/projects/{project_id}", status_code=204)
+def delete_project(project_id: str):
+    try:
+        projects.delete(project_id)
+    except projects.ProjectNotFound:
+        raise HTTPException(404, "Project not found")
+    return Response(status_code=204)
 
 
 @app.get("/api/projects/{project_id}/download")
-def download_project_zip(project_id: str):
-    """Generates and serves a .zip archive of the generated project."""
-    folder_path = os.path.join(OUTPUT_DIR, project_id)
-    if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, _, filenames in os.walk(folder_path):
-            for fn in filenames:
-                file_path = os.path.join(root, fn)
-                rel_path = os.path.relpath(file_path, folder_path)
-                zf.write(file_path, arcname=rel_path)
-
-    zip_buffer.seek(0)
-    return StreamingResponse(
-        zip_buffer,
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={project_id}.zip"},
-    )
+def download_project(project_id: str):
+    p = _project_or_404(project_id)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for rel, content in {**p["files"], **p["tests"]}.items():
+            zf.writestr(rel, content)
+        if p["readme"]:
+            zf.writestr("README.md", p["readme"])
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/zip",
+                             headers={"Content-Disposition": f'attachment; filename="{project_id}.zip"'})
 
 
 @app.get("/api/projects/{project_id}/preview/{file_path:path}")
-@app.get("/api/projects/{project_id}/preview")
-def preview_project_file(project_id: str, file_path: str = "index.html"):
-    """Serves generated project files live with relative asset resolution."""
-    folder_path = os.path.abspath(os.path.join(OUTPUT_DIR, project_id))
-    if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    target_file = file_path if file_path else "index.html"
-    full_path = os.path.abspath(os.path.join(folder_path, target_file))
-    if not full_path.startswith(folder_path):
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    if os.path.isdir(full_path):
-        full_path = os.path.join(full_path, "index.html")
-
-    if not os.path.exists(full_path):
-        raise HTTPException(status_code=404, detail=f"File '{file_path}' not found in project")
-
-    return FileResponse(full_path)
+def preview(project_id: str, file_path: str):
+    """Serves generated files for the live preview. The CSP sandbox gives the
+    page an opaque origin, so generated scripts cannot call this API."""
+    root = projects.project_path(project_id)
+    try:
+        rel = safe_relpath(file_path or "index.html")
+    except UnsafePathError:
+        raise HTTPException(403, "Invalid path")
+    target = (root / rel).resolve()
+    if root.resolve() not in target.parents or not target.is_file():
+        raise HTTPException(404, "File not found")
+    media = mimetypes.guess_type(target.name)[0] or "text/plain"
+    return Response(
+        target.read_bytes(),
+        media_type=media,
+        headers={"Content-Security-Policy": "sandbox allow-scripts allow-forms allow-modals", "X-Content-Type-Options": "nosniff"},
+    )
 
 
-# Serve React app when built
-frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
-if os.path.exists(frontend_dist):
-    from fastapi.staticfiles import StaticFiles
+# ---------------------------------------------------------------- evaluation
 
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+EVAL_DIR = ROOT_DIR / "eval" / "results"
+
+
+@app.get("/api/eval")
+def list_eval_results():
+    """Baseline-vs-CodeCrew benchmark results produced by `python -m eval.run`."""
+    out = []
+    for f in sorted(EVAL_DIR.glob("*.json"), reverse=True) if EVAL_DIR.exists() else []:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        out.append({"name": data.get("name", f.stem), "finished_at": data.get("finished_at"),
+                    "providers": data.get("providers"), "summary": data.get("summary", {})})
+    return {"results": out}
+
+
+@app.get("/api/eval/{name}")
+def get_eval_result(name: str):
+    if not name.replace("-", "").isdigit():
+        raise HTTPException(404, "Result not found")
+    f = EVAL_DIR / f"{name}.json"
+    if not f.exists():
+        raise HTTPException(404, "Result not found")
+    return json.loads(f.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
+
+    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=False)
