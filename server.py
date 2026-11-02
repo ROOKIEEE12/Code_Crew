@@ -73,7 +73,9 @@ class _ErrorsAsJSON:
 class _SameSiteWrites:
     """Refuses requests that change something (POST, PUT, PATCH, DELETE) when the browser
     says they come from a page that is neither the CodeCrew UI nor this API itself.
-    Browsers always send Origin on such requests, so a hostile page cannot forge it."""
+    Browsers always send Origin on such requests, so a hostile page cannot forge it.
+    "null" (sandboxed iframes, including the preview of generated pages) is refused
+    too; clients that are not browsers send no Origin at all."""
 
     UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -83,7 +85,7 @@ class _SameSiteWrites:
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http" and scope["method"] in self.UNSAFE:
             origin = dict(scope["headers"]).get(b"origin", b"").decode("latin-1")
-            if origin and origin != "null" and not _trusted_origin(origin):
+            if origin and not _trusted_origin(origin):
                 return await JSONResponse({"detail": "Request refused: it came from an untrusted web page."},
                                           status_code=403)(scope, receive, send)
         return await self.app(scope, receive, send)

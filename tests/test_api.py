@@ -224,3 +224,14 @@ def test_dns_rebinding_and_foreign_pages_are_refused(client):
     assert client.delete("/api/projects/x-1", headers=ui).status_code == 404  # allowed through; just not found
     docs = {"Origin": "http://127.0.0.1:8000"}  # the API's own /docs page
     assert client.delete("/api/projects/x-1", headers=docs).status_code == 404
+
+
+def test_opaque_origin_pages_cannot_change_anything(client):
+    """Sandboxed iframes on any site, and CodeCrew's own CSP-sandboxed preview of a
+    generated page, send `Origin: null`. A no-cors POST needs no body, so cancel and
+    resume would otherwise be reachable from any web page."""
+    run_id = client.post("/api/runs", json={"requirement": "calculator"}).json()["id"]
+    opaque = {"Origin": "null", "Content-Type": "text/plain"}
+    assert client.post(f"/api/runs/{run_id}/cancel", headers=opaque).status_code == 403
+    assert client.post(f"/api/runs/{run_id}/resume", headers=opaque).status_code == 403
+    _events(client, run_id)  # let the run finish before the fixture tears down
