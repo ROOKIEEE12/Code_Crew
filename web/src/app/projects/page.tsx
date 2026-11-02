@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Archive, Boxes, CheckCircle2, Plus } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Archive, Boxes, CheckCircle2, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
@@ -13,6 +13,14 @@ export default function ProjectsPage() {
     queryFn: api.projects,
   });
   const projects = data?.projects ?? [];
+  const qc = useQueryClient();
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteProject(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["recent-projects"] });
+    },
+  });
 
   return (
     <Page>
@@ -25,7 +33,7 @@ export default function ProjectsPage() {
           </Link>
         }
       />
-          <ErrorNote error={error} />
+          <ErrorNote error={error ?? remove.error} />
           {isLoading && (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {[0, 1, 2].map((i) => (
@@ -39,7 +47,7 @@ export default function ProjectsPage() {
 
           <ul className="stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((p) => (
-              <li key={p.id}>
+              <li key={p.id} className="group relative">
                 <Link
                   href={`/projects/${p.id}`}
                   className="card-hover block h-full rounded-xl border border-line bg-panel p-4"
@@ -72,6 +80,16 @@ export default function ProjectsPage() {
                     <span className="ml-auto">{timeAgo(p.updated_at)}</span>
                   </div>
                 </Link>
+                <button
+                  type="button"
+                  className="icon-btn absolute top-2.5 right-10 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-bad"
+                  title={`Delete ${p.name}`}
+                  aria-label={`Delete ${p.name}`}
+                  disabled={remove.isPending && remove.variables === p.id}
+                  onClick={() => confirm(`Delete project "${p.name}" from disk? This cannot be undone.`) && remove.mutate(p.id)}
+                >
+                  <Trash2 />
+                </button>
               </li>
             ))}
           </ul>

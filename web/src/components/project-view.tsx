@@ -7,26 +7,29 @@ import {
   BookOpen,
   ClipboardList,
   Download,
-  ExternalLink,
   FileCode2,
   Globe,
   History,
   Loader2,
-  RefreshCw,
+  Pencil,
+  Play,
+  RotateCcw,
+  Save,
   Send,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
-import { api, downloadUrl, previewUrl } from "@/lib/api";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { api, downloadUrl } from "@/lib/api";
 import { CodeView } from "./code-view";
 import { Markdown } from "./markdown";
 import { RunList } from "./run-list";
 import { SpecPanel } from "./spec-panel";
+import { TryIt, htmlEntry, runnableFiles } from "./try-it";
 import { Button, ErrorNote, StatusBadge, Tabs } from "./ui";
 
-type Tab = "code" | "preview" | "readme" | "spec" | "history";
+type Tab = "code" | "try" | "readme" | "spec" | "history";
 
 export function ProjectView() {
   const { id } = useParams<{ id: string }>();
@@ -40,18 +43,55 @@ export function ProjectView() {
 
   const [activeTab, setActiveTab] = useState<Tab>("code");
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [change, setChange] = useState("");
-  const [previewKey, setPreviewKey] = useState(0);
+  const params = useSearchParams();
+  const [change, setChange] = useState(() => params.get("change") ?? "");
+  // Unsaved hand edits, by file path.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [newName, setNewName] = useState<string | null>(null);
+  const dirty = Object.keys(drafts);
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["project", id] });
+    qc.invalidateQueries({ queryKey: ["projects"] });
+    qc.invalidateQueries({ queryKey: ["recent-projects"] });
+  };
 
   const iterate = useMutation({
     mutationFn: () => api.iterate(id, change.trim()),
     onSuccess: (run) => router.push(`/runs/${run.id}`),
   });
 
+  const save = useMutation({
+    mutationFn: async () => {
+      for (const [path, content] of Object.entries(drafts)) await api.saveFile(id, path, content);
+    },
+    onSuccess: () => {
+      setDrafts({});
+      refresh();
+    },
+  });
+
+  const rename = useMutation({
+    mutationFn: (name: string) => api.renameProject(id, name),
+    onSuccess: () => {
+      setNewName(null);
+      refresh();
+    },
+  });
+
+  // Warn before closing the tab with unsaved edits.
+  useEffect(() => {
+    if (!dirty.length) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty.length]);
+
   const remove = useMutation({
     mutationFn: () => api.deleteProject(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["recent-projects"] });
       router.push("/projects");
     },
   });
@@ -78,11 +118,8 @@ export function ProjectView() {
       ? selectedFile
       : paths.find((x) => p.files[x] !== undefined) ?? paths[0];
 
-  const hasPreview = Object.keys(p.files).some((f) => f.endsWith(".html"));
-  const entry =
-    p.files["index.html"] !== undefined
-      ? "index.html"
-      : Object.keys(p.files).find((f) => f.endsWith(".html"));
+  const canTry = !!htmlEntry(p.files) || runnableFiles(p.files).length > 0;
+  const tryLabel = htmlEntry(p.files) ? "Live preview" : "Run";
   const v = p.verification;
 
   return (
@@ -95,7 +132,38 @@ export function ProjectView() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <h1 className="truncate text-base font-semibold text-white">{p.name}</h1>
+              {newName === null ? (
+                <>
+                  <h1 className="truncate text-base font-semibold text-white">{p.name}</h1>
+                  <button className="icon-btn" onClick={() => setNewName(p.name)} title="Rename project" aria-label="Rename project">
+                    <Pencil />
+                  </button>
+                </>
+              ) : (
+                <form
+                  className="flex items-center gap-1.5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (newName.trim()) rename.mutate(newName.trim());
+                  }}
+                >
+                  <input
+                    autoFocus
+                    value={newName}
+                    maxLength={120}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Escape" && setNewName(null)}
+                    aria-label="Project name"
+                    className="h-8 w-64 max-w-full rounded-lg border border-accent-strong bg-panel px-2.5 text-sm text-fg outline-none"
+                  />
+                  <Button size="sm" type="submit" disabled={rename.isPending || !newName.trim()}>
+                    {rename.isPending ? <Loader2 className="animate-spin" /> : "Save"}
+                  </Button>
+                  <Button size="sm" variant="quiet" type="button" onClick={() => setNewName(null)}>
+                    Cancel
+                  </Button>
+                </form>
+              )}
               {v ? (
                 <StatusBadge status={v.passed ? "succeeded" : "failed"} />
               ) : (
@@ -106,6 +174,9 @@ export function ProjectView() {
               {p.spec?.summary ?? p.id}
             </p>
             {v && <p className="mt-0.5 text-[11px] text-[#787f90]">{v.summary}</p>}
+            {p.verification_stale && (
+              <p className="mt-1 text-[11px] text-warn">You edited files by hand after the last check, so the test results above may be out of date.</p>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -117,15 +188,14 @@ export function ProjectView() {
             <Button
               variant="danger"
               size="sm"
-              title="Delete project"
-              aria-label="Delete project"
+              title="Delete this project from disk"
               disabled={remove.isPending}
               onClick={() =>
                 confirm(`Delete project "${p.name}" from disk? This cannot be undone.`) &&
                 remove.mutate()
               }
             >
-              <Trash2 />
+              <Trash2 /> Delete
             </Button>
           </div>
         </div>
@@ -136,7 +206,9 @@ export function ProjectView() {
             className="mt-3 flex gap-2"
             onSubmit={(e) => {
               e.preventDefault();
-              if (change.trim().length >= 3) iterate.mutate();
+              if (change.trim().length < 3) return;
+              if (dirty.length && !confirm("You have unsaved edits. The crew works from the saved files, so save first or your edits will be lost. Continue anyway?")) return;
+              iterate.mutate();
             }}
           >
             <div className="relative flex-1">
@@ -156,7 +228,7 @@ export function ProjectView() {
             </Button>
           </form>
         )}
-        <ErrorNote error={iterate.error ?? remove.error} />
+        <ErrorNote error={iterate.error ?? remove.error ?? rename.error} />
       </div>
 
       <Tabs
@@ -165,7 +237,7 @@ export function ProjectView() {
         className="bg-[#121317]"
         tabs={[
           { id: "code" as Tab, label: "Code", icon: FileCode2, count: paths.length },
-          ...(hasPreview ? [{ id: "preview" as Tab, label: "Live preview", icon: Globe }] : []),
+          ...(canTry ? [{ id: "try" as Tab, label: tryLabel, icon: htmlEntry(p.files) ? Globe : Play }] : []),
           ...(p.readme ? [{ id: "readme" as Tab, label: "README", icon: BookOpen }] : []),
           ...(p.spec ? [{ id: "spec" as Tab, label: "Plan", icon: ClipboardList }] : []),
           { id: "history" as Tab, label: "History", icon: History },
@@ -199,6 +271,9 @@ export function ProjectView() {
                         )}
                       />
                       <span className="truncate">{filePath}</span>
+                      {drafts[filePath] !== undefined && (
+                        <span className="ml-auto size-2 shrink-0 rounded-full bg-warn" title="Unsaved changes" aria-label="Unsaved changes" />
+                      )}
                     </button>
                   );
                 })}
@@ -206,9 +281,51 @@ export function ProjectView() {
             </div>
 
             {/* Monaco Editor View */}
-            <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[#101114]">
+            <div
+              className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[#101114]"
+              onKeyDown={(e) => {
+                if (e.key.toLowerCase() === "s" && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  if (dirty.length && !save.isPending) save.mutate();
+                }
+              }}
+            >
               {activePath && allFiles[activePath] !== undefined ? (
-                <CodeView path={activePath} content={allFiles[activePath]} />
+                <>
+                  <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-1.5 text-xs text-muted">
+                    <span className="truncate font-mono text-fg">{activePath}</span>
+                    {dirty.length ? (
+                      <span className="text-warn">
+                        · {dirty.length} unsaved file{dirty.length > 1 ? "s" : ""}
+                      </span>
+                    ) : (
+                      <span className="hidden sm:inline">· Click in the code to edit it yourself</span>
+                    )}
+                    <div className="ml-auto flex items-center gap-2">
+                      {save.error ? <span className="text-bad">{save.error instanceof Error ? save.error.message : String(save.error)}</span> : null}
+                      <Button size="sm" variant="quiet" disabled={!dirty.length || save.isPending} onClick={() => setDrafts({})} title="Throw away unsaved edits">
+                        <RotateCcw /> Discard
+                      </Button>
+                      <Button size="sm" disabled={!dirty.length || save.isPending} onClick={() => save.mutate()} title="Save (Ctrl+S)">
+                        {save.isPending ? <Loader2 className="animate-spin" /> : <Save />} Save
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="min-h-0 flex-1">
+                    <CodeView
+                      path={activePath}
+                      content={drafts[activePath] ?? allFiles[activePath]}
+                      onChange={(value) =>
+                        setDrafts((d) => {
+                          const next = { ...d };
+                          if (value === allFiles[activePath]) delete next[activePath];
+                          else next[activePath] = value;
+                          return next;
+                        })
+                      }
+                    />
+                  </div>
+                </>
               ) : (
                 <div className="grid flex-1 place-items-center text-xs text-[#717787]">
                   No file selected.
@@ -218,40 +335,7 @@ export function ProjectView() {
           </>
         )}
 
-        {/* Live Preview Tab with Browser Frame */}
-        {activeTab === "preview" && entry && (
-          <div className="flex flex-1 flex-col overflow-hidden bg-[#0d0e11]">
-            {/* Mock Browser URL Bar */}
-            <div className="flex items-center gap-2 border-b border-[#252834] bg-[#171920] px-3 py-1.5 text-xs text-[#8c92a2]">
-              <button
-                onClick={() => setPreviewKey((k) => k + 1)}
-                className="rounded p-1 hover:bg-[#252936] hover:text-white"
-                title="Reload Preview"
-              >
-                <RefreshCw className="size-3.5" />
-              </button>
-              <div className="flex flex-1 items-center rounded border border-[#2b2f3d] bg-[#101217] px-2.5 py-1 font-mono text-[11px] text-[#c0c5d4]">
-                <span>preview://{p.id}/{entry}</span>
-              </div>
-              <a
-                href={previewUrl(p.id, entry)}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded p-1 text-[#8c92a2] hover:bg-[#252936] hover:text-white"
-                title="Open in new window"
-              >
-                <ExternalLink className="size-3.5" />
-              </a>
-            </div>
-
-            <iframe
-              key={previewKey}
-              src={previewUrl(p.id, entry)}
-              className="h-full w-full border-0 bg-white"
-              title="Sandboxed Live Preview"
-            />
-          </div>
-        )}
+        {activeTab === "try" && <TryIt projectId={p.id} files={p.files} />}
 
         {/* README Tab */}
         {activeTab === "readme" && p.readme && (

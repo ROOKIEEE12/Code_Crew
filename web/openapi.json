@@ -183,6 +183,36 @@
       }
      }
     }
+   },
+   "delete": {
+    "summary": "Delete Run",
+    "operationId": "delete_run_api_runs__run_id__delete",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/api/runs/{run_id}/cancel": {
@@ -202,6 +232,186 @@
     ],
     "responses": {
      "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs/{run_id}/resume": {
+   "post": {
+    "summary": "Resume Run",
+    "operationId": "resume_run_api_runs__run_id__resume_post",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunState"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs/{run_id}/images/{image_id}": {
+   "get": {
+    "summary": "Run Image",
+    "description": "An image the user attached, a reference-page screenshot, or a design-review screenshot.",
+    "operationId": "run_image_api_runs__run_id__images__image_id__get",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "image_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Image Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs/{run_id}/answer": {
+   "post": {
+    "summary": "Answer Question",
+    "operationId": "answer_question_api_runs__run_id__answer_post",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnswerBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs/{run_id}/messages": {
+   "post": {
+    "summary": "Send Message",
+    "operationId": "send_message_api_runs__run_id__messages_post",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MessageBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
       "description": "Successful Response",
       "content": {
        "application/json": {
@@ -338,6 +548,51 @@
      }
     }
    },
+   "patch": {
+    "summary": "Rename Project",
+    "operationId": "rename_project_api_projects__project_id__patch",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RenameProject"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
    "delete": {
     "summary": "Delete Project",
     "operationId": "delete_project_api_projects__project_id__delete",
@@ -418,6 +673,62 @@
     }
    }
   },
+  "/api/projects/{project_id}/files/{file_path}": {
+   "put": {
+    "summary": "Save Project File",
+    "operationId": "save_project_file_api_projects__project_id__files__file_path__put",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "file_path",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "File Path"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SaveFile"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/projects/{project_id}/download": {
    "get": {
     "summary": "Download Project",
@@ -433,6 +744,54 @@
       }
      }
     ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/exec": {
+   "post": {
+    "summary": "Exec Project",
+    "description": "Runs one program file of the project in the sandbox and returns what it printed.",
+    "operationId": "exec_project_api_projects__project_id__exec_post",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ExecBody"
+       }
+      }
+     }
+    },
     "responses": {
      "200": {
       "description": "Successful Response",
@@ -611,6 +970,77 @@
     ],
     "title": "ActivityEntry"
    },
+   "AnswerBody": {
+    "properties": {
+     "question_id": {
+      "type": "string",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Question Id"
+     },
+     "choice": {
+      "type": "integer",
+      "maximum": 9.0,
+      "minimum": 0.0,
+      "title": "Choice"
+     }
+    },
+    "type": "object",
+    "required": [
+     "question_id",
+     "choice"
+    ],
+    "title": "AnswerBody"
+   },
+   "Clarification": {
+    "properties": {
+     "question": {
+      "type": "string",
+      "title": "Question"
+     },
+     "answer": {
+      "type": "string",
+      "title": "Answer"
+     },
+     "auto": {
+      "type": "boolean",
+      "title": "Auto",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "question",
+     "answer"
+    ],
+    "title": "Clarification"
+   },
+   "ColorToken": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Role of the colour, e.g. 'background', 'surface', 'text', 'muted', 'accent'."
+     },
+     "hex": {
+      "type": "string",
+      "title": "Hex",
+      "description": "Hex value, e.g. '#0b0b0f'."
+     },
+     "usage": {
+      "type": "string",
+      "title": "Usage",
+      "description": "Where it is used."
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "hex",
+     "usage"
+    ],
+    "title": "ColorToken"
+   },
    "CreateRun": {
     "properties": {
      "requirement": {
@@ -618,6 +1048,21 @@
       "maxLength": 8000,
       "minLength": 3,
       "title": "Requirement"
+     },
+     "ask": {
+      "type": "boolean",
+      "title": "Ask",
+      "description": "Let the Planner ask up to 2 multiple-choice questions before planning.",
+      "default": false
+     },
+     "images": {
+      "items": {
+       "$ref": "#/components/schemas/ImageIn"
+      },
+      "type": "array",
+      "maxItems": 4,
+      "title": "Images",
+      "description": "Reference designs (screenshots) for vision-capable models."
      }
     },
     "type": "object",
@@ -686,6 +1131,148 @@
      "score_before"
     ],
     "title": "DebugRound"
+   },
+   "DesignBrief": {
+    "properties": {
+     "style": {
+      "type": "string",
+      "title": "Style",
+      "description": "The look and feel in 2-4 sentences: mood, density, shapes, imagery, motion."
+     },
+     "palette": {
+      "items": {
+       "$ref": "#/components/schemas/ColorToken"
+      },
+      "type": "array",
+      "title": "Palette",
+      "description": "4 to 8 colours that work together with good contrast."
+     },
+     "typography": {
+      "type": "string",
+      "title": "Typography",
+      "description": "Font families (with fallbacks), the type scale and weights."
+     },
+     "sections": {
+      "items": {
+       "$ref": "#/components/schemas/PageSection"
+      },
+      "type": "array",
+      "title": "Sections",
+      "description": "Every page section in order, top to bottom, including header/nav and footer."
+     },
+     "interactions": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Interactions",
+      "description": "Hover/focus states, animations, menus, toggles and other behaviour."
+     },
+     "responsive": {
+      "type": "string",
+      "title": "Responsive",
+      "description": "How the layout adapts on phones and tablets."
+     },
+     "reference_notes": {
+      "type": "string",
+      "title": "Reference Notes",
+      "description": "How the design follows the user's reference links or images; empty if there were none."
+     }
+    },
+    "type": "object",
+    "required": [
+     "style",
+     "palette",
+     "typography",
+     "sections",
+     "interactions",
+     "responsive",
+     "reference_notes"
+    ],
+    "title": "DesignBrief"
+   },
+   "DesignReview": {
+    "properties": {
+     "round": {
+      "type": "integer",
+      "title": "Round"
+     },
+     "score": {
+      "type": "integer",
+      "title": "Score"
+     },
+     "strengths": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Strengths",
+      "default": []
+     },
+     "fixes": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Fixes",
+      "default": []
+     },
+     "applied": {
+      "type": "boolean",
+      "title": "Applied",
+      "default": false
+     },
+     "kept": {
+      "type": "boolean",
+      "title": "Kept",
+      "default": true
+     },
+     "screenshots": {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array",
+      "title": "Screenshots",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "round",
+     "score"
+    ],
+    "title": "DesignReview"
+   },
+   "ExecBody": {
+    "properties": {
+     "path": {
+      "type": "string",
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Path",
+      "description": "Project file to run, e.g. 'main.py'."
+     },
+     "stdin": {
+      "type": "string",
+      "maxLength": 20000,
+      "title": "Stdin",
+      "description": "Text typed into the program; each line answers one input().",
+      "default": ""
+     },
+     "args": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "maxItems": 20,
+      "title": "Args"
+     }
+    },
+    "type": "object",
+    "required": [
+     "path"
+    ],
+    "title": "ExecBody"
    },
    "FileCheck": {
     "properties": {
@@ -821,6 +1408,59 @@
     "type": "object",
     "title": "HTTPValidationError"
    },
+   "ImageIn": {
+    "properties": {
+     "media_type": {
+      "type": "string",
+      "title": "Media Type",
+      "description": "image/png, image/jpeg, image/webp or image/gif"
+     },
+     "data": {
+      "type": "string",
+      "maxLength": 7000000,
+      "title": "Data",
+      "description": "Base64-encoded image, at most 5 MB."
+     }
+    },
+    "type": "object",
+    "required": [
+     "media_type",
+     "data"
+    ],
+    "title": "ImageIn"
+   },
+   "ImageRef": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "reference",
+       "screenshot"
+      ],
+      "title": "Kind"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label",
+      "default": ""
+     },
+     "media_type": {
+      "type": "string",
+      "title": "Media Type"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "kind",
+     "media_type"
+    ],
+    "title": "ImageRef"
+   },
    "Issue": {
     "properties": {
      "source": {
@@ -831,7 +1471,9 @@
        "test",
        "lint",
        "security",
-       "spec"
+       "spec",
+       "quality",
+       "runtime"
       ],
       "title": "Source"
      },
@@ -903,6 +1545,131 @@
      "request"
     ],
     "title": "IterateRun"
+   },
+   "MessageBody": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Text"
+     }
+    },
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "title": "MessageBody"
+   },
+   "PageSection": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "The HTML id attribute the section element must have, e.g. 'pricing'."
+     },
+     "page": {
+      "type": "string",
+      "title": "Page",
+      "description": "HTML file the section is on, e.g. 'index.html'."
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Short name, e.g. 'Pricing'."
+     },
+     "content": {
+      "type": "string",
+      "title": "Content",
+      "description": "What it shows: the real headline, copy, items and visuals, specific to this project."
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "page",
+     "name",
+     "content"
+    ],
+    "title": "PageSection"
+   },
+   "Reference": {
+    "properties": {
+     "url": {
+      "type": "string",
+      "title": "Url"
+     },
+     "ok": {
+      "type": "boolean",
+      "title": "Ok"
+     },
+     "error": {
+      "type": "string",
+      "title": "Error",
+      "default": ""
+     },
+     "title": {
+      "type": "string",
+      "title": "Title",
+      "default": ""
+     },
+     "description": {
+      "type": "string",
+      "title": "Description",
+      "default": ""
+     },
+     "outline": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Outline",
+      "default": []
+     },
+     "colors": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Colors",
+      "default": []
+     },
+     "fonts": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Fonts",
+      "default": []
+     },
+     "excerpt": {
+      "type": "string",
+      "title": "Excerpt",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "url",
+     "ok"
+    ],
+    "title": "Reference",
+    "description": "What the reference reader extracted from a link in the request."
+   },
+   "RenameProject": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "title": "RenameProject"
    },
    "RunState": {
     "properties": {
@@ -1016,6 +1783,51 @@
       "title": "Disputes Used",
       "default": 0
      },
+     "ask_questions": {
+      "type": "boolean",
+      "title": "Ask Questions",
+      "default": false
+     },
+     "clarifications": {
+      "items": {
+       "$ref": "#/components/schemas/Clarification"
+      },
+      "type": "array",
+      "title": "Clarifications",
+      "default": []
+     },
+     "references": {
+      "items": {
+       "$ref": "#/components/schemas/Reference"
+      },
+      "type": "array",
+      "title": "References",
+      "default": []
+     },
+     "images": {
+      "items": {
+       "$ref": "#/components/schemas/ImageRef"
+      },
+      "type": "array",
+      "title": "Images",
+      "default": []
+     },
+     "design_reviews": {
+      "items": {
+       "$ref": "#/components/schemas/DesignReview"
+      },
+      "type": "array",
+      "title": "Design Reviews",
+      "default": []
+     },
+     "user_notes": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "User Notes",
+      "default": []
+     },
      "readme": {
       "type": "string",
       "title": "Readme",
@@ -1083,6 +1895,20 @@
     ],
     "title": "RunState"
    },
+   "SaveFile": {
+    "properties": {
+     "content": {
+      "type": "string",
+      "maxLength": 1000000,
+      "title": "Content"
+     }
+    },
+    "type": "object",
+    "required": [
+     "content"
+    ],
+    "title": "SaveFile"
+   },
    "SpecOut": {
     "properties": {
      "project_name": {
@@ -1132,6 +1958,17 @@
       "type": "array",
       "title": "Assumptions",
       "description": "Ambiguities in the request and how they were resolved."
+     },
+     "design": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/DesignBrief"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Required for anything with a web page; null for projects without a UI."
      }
     },
     "type": "object",
@@ -1142,7 +1979,8 @@
      "run_instructions",
      "files",
      "acceptance_criteria",
-     "assumptions"
+     "assumptions",
+     "design"
     ],
     "title": "SpecOut"
    },
@@ -1266,6 +2104,17 @@
      "update_readme": {
       "type": "boolean",
       "title": "Update Readme"
+     },
+     "design": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/DesignBrief"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The complete updated design brief when the change alters the look or the page sections; otherwise null."
      }
     },
     "type": "object",
@@ -1275,7 +2124,8 @@
      "files",
      "new_acceptance_criteria",
      "instructions",
-     "update_readme"
+     "update_readme",
+     "design"
     ],
     "title": "TriageOut"
    },

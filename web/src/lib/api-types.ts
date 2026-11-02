@@ -84,7 +84,8 @@ export interface paths {
         get: operations["get_run_api_runs__run_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Run */
+        delete: operations["delete_run_api_runs__run_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -101,6 +102,77 @@ export interface paths {
         put?: never;
         /** Cancel Run */
         post: operations["cancel_run_api_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Run */
+        post: operations["resume_run_api_runs__run_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/images/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Image
+         * @description An image the user attached, a reference-page screenshot, or a design-review screenshot.
+         */
+        get: operations["run_image_api_runs__run_id__images__image_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer Question */
+        post: operations["answer_question_api_runs__run_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Message */
+        post: operations["send_message_api_runs__run_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -156,7 +228,8 @@ export interface paths {
         delete: operations["delete_project_api_projects__project_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Rename Project */
+        patch: operations["rename_project_api_projects__project_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/runs": {
@@ -176,6 +249,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/files/{file_path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save Project File */
+        put: operations["save_project_file_api_projects__project_id__files__file_path__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/download": {
         parameters: {
             query?: never;
@@ -187,6 +277,26 @@ export interface paths {
         get: operations["download_project_api_projects__project_id__download_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/exec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exec Project
+         * @description Runs one program file of the project in the sandbox and returns what it printed.
+         */
+        post: operations["exec_project_api_projects__project_id__exec_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -282,10 +392,58 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** AnswerBody */
+        AnswerBody: {
+            /** Question Id */
+            question_id: string;
+            /** Choice */
+            choice: number;
+        };
+        /** Clarification */
+        Clarification: {
+            /** Question */
+            question: string;
+            /** Answer */
+            answer: string;
+            /**
+             * Auto
+             * @default false
+             */
+            auto: boolean;
+        };
+        /** ColorToken */
+        ColorToken: {
+            /**
+             * Name
+             * @description Role of the colour, e.g. 'background', 'surface', 'text', 'muted', 'accent'.
+             */
+            name: string;
+            /**
+             * Hex
+             * @description Hex value, e.g. '#0b0b0f'.
+             */
+            hex: string;
+            /**
+             * Usage
+             * @description Where it is used.
+             */
+            usage: string;
+        };
         /** CreateRun */
         CreateRun: {
             /** Requirement */
             requirement: string;
+            /**
+             * Ask
+             * @description Let the Planner ask up to 2 multiple-choice questions before planning.
+             * @default false
+             */
+            ask: boolean;
+            /**
+             * Images
+             * @description Reference designs (screenshots) for vision-capable models.
+             */
+            images?: components["schemas"]["ImageIn"][];
         };
         /** DebugRound */
         DebugRound: {
@@ -309,6 +467,92 @@ export interface components {
              * @default true
              */
             kept: boolean;
+        };
+        /** DesignBrief */
+        DesignBrief: {
+            /**
+             * Style
+             * @description The look and feel in 2-4 sentences: mood, density, shapes, imagery, motion.
+             */
+            style: string;
+            /**
+             * Palette
+             * @description 4 to 8 colours that work together with good contrast.
+             */
+            palette: components["schemas"]["ColorToken"][];
+            /**
+             * Typography
+             * @description Font families (with fallbacks), the type scale and weights.
+             */
+            typography: string;
+            /**
+             * Sections
+             * @description Every page section in order, top to bottom, including header/nav and footer.
+             */
+            sections: components["schemas"]["PageSection"][];
+            /**
+             * Interactions
+             * @description Hover/focus states, animations, menus, toggles and other behaviour.
+             */
+            interactions: string[];
+            /**
+             * Responsive
+             * @description How the layout adapts on phones and tablets.
+             */
+            responsive: string;
+            /**
+             * Reference Notes
+             * @description How the design follows the user's reference links or images; empty if there were none.
+             */
+            reference_notes: string;
+        };
+        /** DesignReview */
+        DesignReview: {
+            /** Round */
+            round: number;
+            /** Score */
+            score: number;
+            /**
+             * Strengths
+             * @default []
+             */
+            strengths: string[];
+            /**
+             * Fixes
+             * @default []
+             */
+            fixes: string[];
+            /**
+             * Applied
+             * @default false
+             */
+            applied: boolean;
+            /**
+             * Kept
+             * @default true
+             */
+            kept: boolean;
+            /**
+             * Screenshots
+             * @default []
+             */
+            screenshots: number[];
+        };
+        /** ExecBody */
+        ExecBody: {
+            /**
+             * Path
+             * @description Project file to run, e.g. 'main.py'.
+             */
+            path: string;
+            /**
+             * Stdin
+             * @description Text typed into the program; each line answers one input().
+             * @default
+             */
+            stdin: string;
+            /** Args */
+            args?: string[];
         };
         /** FileCheck */
         FileCheck: {
@@ -386,13 +630,43 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** ImageIn */
+        ImageIn: {
+            /**
+             * Media Type
+             * @description image/png, image/jpeg, image/webp or image/gif
+             */
+            media_type: string;
+            /**
+             * Data
+             * @description Base64-encoded image, at most 5 MB.
+             */
+            data: string;
+        };
+        /** ImageRef */
+        ImageRef: {
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "reference" | "screenshot";
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Media Type */
+            media_type: string;
+        };
         /** Issue */
         Issue: {
             /**
              * Source
              * @enum {string}
              */
-            source: "syntax" | "contract" | "test" | "lint" | "security" | "spec";
+            source: "syntax" | "contract" | "test" | "lint" | "security" | "spec" | "quality" | "runtime";
             /**
              * Severity
              * @enum {string}
@@ -411,6 +685,84 @@ export interface components {
         IterateRun: {
             /** Request */
             request: string;
+        };
+        /** MessageBody */
+        MessageBody: {
+            /** Text */
+            text: string;
+        };
+        /** PageSection */
+        PageSection: {
+            /**
+             * Id
+             * @description The HTML id attribute the section element must have, e.g. 'pricing'.
+             */
+            id: string;
+            /**
+             * Page
+             * @description HTML file the section is on, e.g. 'index.html'.
+             */
+            page: string;
+            /**
+             * Name
+             * @description Short name, e.g. 'Pricing'.
+             */
+            name: string;
+            /**
+             * Content
+             * @description What it shows: the real headline, copy, items and visuals, specific to this project.
+             */
+            content: string;
+        };
+        /**
+         * Reference
+         * @description What the reference reader extracted from a link in the request.
+         */
+        Reference: {
+            /** Url */
+            url: string;
+            /** Ok */
+            ok: boolean;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Outline
+             * @default []
+             */
+            outline: string[];
+            /**
+             * Colors
+             * @default []
+             */
+            colors: string[];
+            /**
+             * Fonts
+             * @default []
+             */
+            fonts: string[];
+            /**
+             * Excerpt
+             * @default
+             */
+            excerpt: string;
+        };
+        /** RenameProject */
+        RenameProject: {
+            /** Name */
+            name: string;
         };
         /** RunState */
         RunState: {
@@ -470,6 +822,36 @@ export interface components {
              */
             disputes_used: number;
             /**
+             * Ask Questions
+             * @default false
+             */
+            ask_questions: boolean;
+            /**
+             * Clarifications
+             * @default []
+             */
+            clarifications: components["schemas"]["Clarification"][];
+            /**
+             * References
+             * @default []
+             */
+            references: components["schemas"]["Reference"][];
+            /**
+             * Images
+             * @default []
+             */
+            images: components["schemas"]["ImageRef"][];
+            /**
+             * Design Reviews
+             * @default []
+             */
+            design_reviews: components["schemas"]["DesignReview"][];
+            /**
+             * User Notes
+             * @default []
+             */
+            user_notes: string[];
+            /**
              * Readme
              * @default
              */
@@ -496,6 +878,11 @@ export interface components {
             created_at?: number;
             /** Finished At */
             finished_at?: number | null;
+        };
+        /** SaveFile */
+        SaveFile: {
+            /** Content */
+            content: string;
         };
         /** SpecOut */
         SpecOut: {
@@ -525,6 +912,8 @@ export interface components {
              * @description Ambiguities in the request and how they were resolved.
              */
             assumptions: string[];
+            /** @description Required for anything with a web page; null for projects without a UI. */
+            design: components["schemas"]["DesignBrief"] | null;
         };
         /** TestCaseResult */
         TestCaseResult: {
@@ -595,6 +984,8 @@ export interface components {
             instructions: string;
             /** Update Readme */
             update_readme: boolean;
+            /** @description The complete updated design brief when the change alters the look or the page sections; otherwise null. */
+            design: components["schemas"]["DesignBrief"] | null;
         };
         /** Usage */
         Usage: {
@@ -845,6 +1236,35 @@ export interface operations {
             };
         };
     };
+    delete_run_api_runs__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     cancel_run_api_runs__run_id__cancel_post: {
         parameters: {
             query?: never;
@@ -858,6 +1278,139 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_run_api_runs__run_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_image_api_runs__run_id__images__image_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_question_api_runs__run_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_message_api_runs__run_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -991,6 +1544,41 @@ export interface operations {
             };
         };
     };
+    rename_project_api_projects__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameProject"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     iterate_project_api_projects__project_id__runs_post: {
         parameters: {
             query?: never;
@@ -1026,6 +1614,42 @@ export interface operations {
             };
         };
     };
+    save_project_file_api_projects__project_id__files__file_path__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                file_path: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveFile"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     download_project_api_projects__project_id__download_get: {
         parameters: {
             query?: never;
@@ -1036,6 +1660,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exec_project_api_projects__project_id__exec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

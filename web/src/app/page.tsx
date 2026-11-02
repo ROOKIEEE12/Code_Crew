@@ -1,6 +1,7 @@
 import { ChevronDown, MessageSquareText, MonitorPlay, PackageCheck } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
+import { Greeting } from "@/components/greeting";
 import { NewRunForm } from "@/components/new-run-form";
 import { RunList } from "@/components/run-list";
 import { BUILD_STEPS, STEP } from "@/lib/crew";
@@ -22,7 +23,9 @@ export default function Home() {
           <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-line-strong bg-panel/70 px-3 py-1 text-xs text-fg-2">
             <span className="dot" /> A team of AI agents that tests its own work
           </div>
-          <h1 className="mt-5 text-3xl font-semibold tracking-tight text-white md:text-4xl">What do you want to build?</h1>
+          <h1 className="mt-5 text-3xl font-semibold tracking-tight text-balance text-white md:text-4xl">
+            <Greeting />
+          </h1>
           <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-fg-2">
             Describe it below. CodeCrew plans it, writes tests, writes the code and keeps fixing it until the tests really pass.
           </p>
@@ -88,7 +91,7 @@ export default function Home() {
               See all →
             </Link>
           </div>
-          <RunList limit={5} />
+          <RunList limit={5} sessions />
         </section>
       </div>
     </div>

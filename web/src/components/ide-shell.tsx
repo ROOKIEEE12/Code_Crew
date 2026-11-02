@@ -17,6 +17,7 @@ import {
   Send,
   Settings as SettingsIcon,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -25,6 +26,8 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { EXAMPLES } from "@/lib/crew";
 import { usePref } from "@/lib/prefs";
+import { groupSessions } from "@/lib/sessions";
+import { useDeleteRun } from "@/lib/use-delete-run";
 import { Guide } from "./guide";
 
 const NAV = [
@@ -43,6 +46,7 @@ function isTyping(e: KeyboardEvent) {
 function IdeShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? "/";
   const search = useSearchParams()?.toString() ?? "";
+  const router = useRouter();
 
   const [collapsedPref, setCollapsedPref] = usePref("sidebar-collapsed", "0");
   const [assistantPref, setAssistantPref] = usePref("assistant-open", "0");
@@ -63,7 +67,8 @@ function IdeShellInner({ children }: { children: React.ReactNode }) {
   const providers = health.data?.providers_configured ?? [];
   const allRuns = runs.data?.runs ?? [];
   const active = allRuns.filter((r) => r.status === "running" || r.status === "queued");
-  const recentRuns = allRuns.slice(0, 5);
+  const recentSessions = groupSessions(allRuns).slice(0, 6);
+  const removeRun = useDeleteRun((runId) => pathname === `/runs/${runId}` && router.push("/runs"));
   const recentProjects = (projects.data?.projects ?? []).slice(0, 5);
 
   function toggleSidebar() {
@@ -162,19 +167,38 @@ function IdeShellInner({ children }: { children: React.ReactNode }) {
 
           <div className="side-scroll scroll-thin">
             <div className="side-section">
-              <span>Recent runs</span>
-              {allRuns.length > 5 && <Link href="/runs">See all</Link>}
+              <span>Sessions</span>
+              <Link href="/runs">See all</Link>
             </div>
             <div className="side-list">
-              {recentRuns.length === 0 ? (
+              {recentSessions.length === 0 ? (
                 <span className="side-empty">Nothing yet</span>
               ) : (
-                recentRuns.map((r) => (
-                  <Link key={r.id} href={`/runs/${r.id}`} className={clsx("side-row", pathname === `/runs/${r.id}` && "active")} title={r.requirement}>
-                    <span className={clsx("status-dot", r.status)} />
-                    <span>{r.requirement}</span>
-                  </Link>
-                ))
+                recentSessions.map((s) => {
+                  const here = s.runs.some((r) => pathname === `/runs/${r.id}`);
+                  return (
+                    <div key={s.key} className="side-run">
+                      <Link
+                        href={`/runs/${s.latest.id}`}
+                        className={clsx("side-row", here && "active")}
+                        title={s.runs.length > 1 ? `${s.title}\n\nLatest: ${s.latest.requirement}` : s.title}
+                      >
+                        <span className={clsx("status-dot", s.latest.status)} />
+                        <span>{s.title}</span>
+                        {s.runs.length > 1 && <span className="side-count">{s.runs.length}</span>}
+                      </Link>
+                      <button
+                        type="button"
+                        className="side-del"
+                        title="Delete this session"
+                        aria-label={`Delete session: ${s.title}`}
+                        onClick={() => (s.runs.length > 1 ? removeRun.askSession(s.title, s.runs) : removeRun.ask(s.latest))}
+                      >
+                        <Trash2 />
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
 
@@ -205,7 +229,13 @@ function IdeShellInner({ children }: { children: React.ReactNode }) {
         </aside>
 
         <main className="main">
-          <div key={`${pathname}?${search}`} className="page-enter h-full min-h-0">
+          {health.data?.stale && (
+            <div className="stale-bar" role="status">
+              The engine is running older code than what is on disk, so recent changes (like live coding) are not active yet.
+              Restart the backend: stop it, then run <code>python scripts/dev.py</code> again.
+            </div>
+          )}
+          <div key={`${pathname}?${search}`} className="page-enter min-h-0 flex-1">
             {children}
           </div>
         </main>
@@ -217,7 +247,11 @@ function IdeShellInner({ children }: { children: React.ReactNode }) {
         <div>
           <span className="flex items-center gap-1.5">
             <span className={clsx("dot", !online && "off")} style={{ width: 6, height: 6 }} />
-            {online ? `Engine online${providers.length ? ` · ${providers.join(", ")}` : ""}` : "Engine offline: run python scripts/dev.py"}
+            {!online
+              ? "Engine offline: run python scripts/dev.py"
+              : health.data?.stale
+                ? "Engine needs a restart to use the latest code"
+                : `Engine online${providers.length ? ` · ${providers.join(", ")}` : ""}`}
           </span>
           {active.length > 0 && <span className="text-accent">{active.length} build{active.length > 1 ? "s" : ""} running</span>}
         </div>
@@ -344,7 +378,14 @@ function Assistant({ pathname, onClose }: { pathname: string; onClose: () => voi
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<{ role: "user" | "bot"; text: string }[]>([]);
-  const projectId = pathname.match(/^\/projects\/([^/]+)/)?.[1];
+  const [askPref] = usePref("ask-questions", "1");
+  // Where a message goes depends on the page: a project gets a change request, a run
+  // that is still working gets an instruction, a finished run changes the project it saved.
+  const runId = pathname.match(/^\/runs\/([^/]+)/)?.[1];
+  const run = useQuery({ queryKey: ["run", runId], queryFn: () => api.run(runId!), enabled: !!runId, refetchInterval: 5_000 });
+  const runActive = !!run.data && (run.data.status === "running" || run.data.status === "queued");
+  const projectId = pathname.match(/^\/projects\/([^/]+)/)?.[1] ?? (runActive ? undefined : run.data?.project_id ?? undefined);
+  const target = runActive ? "run" : projectId ? "project" : "new";
 
   async function submit() {
     const text = input.trim();
@@ -353,9 +394,14 @@ function Assistant({ pathname, onClose }: { pathname: string; onClose: () => voi
     setInput("");
     setMessages((m) => [...m, { role: "user", text }]);
     try {
-      const run = projectId ? await api.iterate(projectId, text) : await api.createRun(text);
-      setMessages((m) => [...m, { role: "bot", text: projectId ? "Change request sent. Opening the live view…" : "Build started. Opening the live view…" }]);
-      router.push(`/runs/${run.id}`);
+      if (target === "run" && runId) {
+        await api.sendMessage(runId, text);
+        setMessages((m) => [...m, { role: "bot", text: "Sent to the crew. The next agent to start will follow it." }]);
+        return;
+      }
+      const started = target === "project" && projectId ? await api.iterate(projectId, text) : await api.createRun(text, askPref === "1");
+      setMessages((m) => [...m, { role: "bot", text: target === "project" ? `Change request sent to ${projectId}. Opening the live view…` : "Build started. Opening the live view…" }]);
+      router.push(`/runs/${started.id}`);
     } catch (e) {
       setMessages((m) => [...m, { role: "bot", text: `Couldn't start: ${e instanceof Error ? e.message : String(e)}` }]);
     } finally {
@@ -372,7 +418,9 @@ function Assistant({ pathname, onClose }: { pathname: string; onClose: () => voi
           </div>
           <div>
             <div className="text-[13px] font-semibold text-white">Ask the crew</div>
-            <div className="text-[11px] text-muted">{projectId ? "Changes go to this project" : "Starts a new build"}</div>
+            <div className="max-w-[230px] truncate text-[11px] text-muted" title={projectId}>
+              {target === "run" ? "Instructions go to the crew working now" : target === "project" ? `Changes go to ${projectId}` : "Starts a new build"}
+            </div>
           </div>
         </div>
         <button className="icon-btn" onClick={onClose} aria-label="Close">
@@ -384,9 +432,13 @@ function Assistant({ pathname, onClose }: { pathname: string; onClose: () => voi
         {messages.length === 0 ? (
           <div className="my-auto">
             <p className="mb-3 text-center text-[13px] text-muted">
-              {projectId ? "Describe what you'd like changed in this project." : "Pick an idea to start from, or write your own below."}
+              {target === "run"
+                ? "Tell the crew something while they work, e.g. \"use a dark theme\"."
+                : target === "project"
+                  ? "Describe what you'd like changed in this project. It updates the same project; nothing new is created."
+                  : "Pick an idea to start from, or write your own below."}
             </p>
-            {!projectId && (
+            {target === "new" && (
               <div className="stagger grid gap-2">
                 {EXAMPLES.map((ex) => (
                   <button key={ex.title} onClick={() => setInput(ex.prompt)} className="card-hover flex items-start gap-2.5 rounded-lg border border-line bg-panel p-2.5 text-left">
@@ -421,7 +473,7 @@ function Assistant({ pathname, onClose }: { pathname: string; onClose: () => voi
           value={input}
           onChange={(e) => setInput(e.target.value)}
           rows={3}
-          placeholder={projectId ? "e.g. Add a dark mode button" : "e.g. A unit converter for km, miles and metres"}
+          placeholder={target === "run" ? "e.g. Make the buttons rounded" : target === "project" ? "e.g. Add a dark mode button" : "e.g. A unit converter for km, miles and metres"}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

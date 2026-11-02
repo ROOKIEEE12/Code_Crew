@@ -1,4 +1,5 @@
 import type { Spec } from "@/lib/api";
+import { DesignBriefView } from "./design-panel";
 
 const VERIFY_LABEL = { automated_test: "test", static_check: "static", manual: "manual" } as const;
 
@@ -17,6 +18,8 @@ export function SpecPanel({ spec }: { spec: Spec | null }) {
           <code className="font-mono text-xs">{spec.run_instructions}</code>
         </p>
       </section>
+
+      {spec.design && <DesignBriefView design={spec.design} />}
 
       <section>
         <h3 className="mb-1 text-xs font-medium text-muted">What counts as done (acceptance criteria)</h3>

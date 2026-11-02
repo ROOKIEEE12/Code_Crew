@@ -8,14 +8,14 @@ export default function RunsPage() {
     <Page width="max-w-4xl">
       <PageHeader
         title="Runs"
-        description="Every build and every change you asked for. Open one to replay exactly what each agent did, step by step."
+        description="Each session is one project: the build and every change you asked for afterwards, like a chat. Open one to continue it or replay what each agent did."
         actions={
           <Link href="/" className="btn btn-primary">
             <Plus /> New build
           </Link>
         }
       />
-      <RunList />
+      <RunList sessions />
     </Page>
   );
 }

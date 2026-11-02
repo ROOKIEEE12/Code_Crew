@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { AlertTriangle, ArrowUpRight, Ban, Check, CheckCircle2, Loader2, RotateCcw, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Ban, Check, CheckCircle2, Loader2, Play, RotateCcw, RotateCw, XCircle } from "lucide-react";
 import Link from "next/link";
 import { BUILD_STEPS, ITERATE_STEPS, STEP } from "@/lib/crew";
 import { duration } from "@/lib/format";
@@ -62,7 +62,7 @@ export function Pipeline({ view, mode }: { view: RunView; mode: "build" | "itera
 }
 
 /** "What is happening right now", written for a first-time user. */
-export function NowCard({ view, mode, elapsed }: { view: RunView; mode: "build" | "iterate"; elapsed: number }) {
+export function NowCard({ view, mode, elapsed, onAnswer }: { view: RunView; mode: "build" | "iterate"; elapsed: number; onAnswer?: () => void }) {
   const steps = stepsFor(mode);
   const idx = steps.indexOf(view.phase);
   const s = STEP[view.phase];
@@ -75,6 +75,24 @@ export function NowCard({ view, mode, elapsed }: { view: RunView; mode: "build" 
           <div className="text-sm font-medium text-fg">Getting the crew ready…</div>
           <div className="text-xs text-muted">The first step usually starts within a few seconds.</div>
         </div>
+      </div>
+    );
+  }
+
+  const pending = Object.values(view.questions).find((q) => !q.answer);
+  if (pending) {
+    return (
+      <div className="flex items-center gap-3 rounded-xl border border-accent/50 bg-accent-soft px-4 py-3 animate-[rise-in_.35s_cubic-bezier(.22,1,.36,1)_both]">
+        <span className="status-dot running" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-white">The {pending.agent} has a question for you</div>
+          <div className="text-[13px] text-fg-2">Answer it in the transcript, or the crew goes with the recommended option.</div>
+        </div>
+        {onAnswer && (
+          <button type="button" className="btn btn-primary btn-sm lg:hidden" onClick={onAnswer}>
+            Answer now
+          </button>
+        )}
       </div>
     );
   }
@@ -112,10 +130,40 @@ export function NowCard({ view, mode, elapsed }: { view: RunView; mode: "build" 
   );
 }
 
-export function ResultBanner({ view, onShowChecks }: { view: RunView; onShowChecks: () => void }) {
+/** Plain-language reason a run stopped, from its raw error text. */
+function explainError(error: string | null): string {
+  if (!error) return "Unknown error.";
+  if (/No LLM provider/i.test(error)) return "No AI key is set up. Add one to the .env file in the project folder, then restart the backend.";
+  if (/Interrupted/i.test(error)) return "The backend stopped while this run was working.";
+  if (/All models failed/i.test(error))
+    return "Every AI model was busy, rate-limited or out of free quota at the same moment. Wait a minute or two, then resume.";
+  return error;
+}
+
+export function ResultBanner({
+  view,
+  onShowChecks,
+  onTryIt,
+  onResume,
+  resuming,
+  resumeError,
+}: {
+  view: RunView;
+  onShowChecks: () => void;
+  onTryIt?: () => void;
+  onResume?: () => void;
+  resuming?: boolean;
+  resumeError?: string | null;
+}) {
   const done = view.done;
   if (!done) return null;
   const latest = view.verifications[view.verifications.length - 1];
+  const canResume = !!onResume && (done.status === "error" || done.status === "cancelled");
+  const saved = [
+    view.spec ? "the plan" : "",
+    Object.values(view.files).some((f) => f.kind === "test") ? "the tests" : "",
+    Object.values(view.files).some((f) => f.kind === "source") ? `${Object.values(view.files).filter((f) => f.kind === "source").length} finished file(s)` : "",
+  ].filter(Boolean);
 
   const variants = {
     succeeded: {
@@ -136,12 +184,9 @@ export function ResultBanner({ view, onShowChecks }: { view: RunView; onShowChec
       icon: XCircle,
       cls: "border-bad/40 bg-bad-soft text-bad",
       title: "The run stopped because of an error",
-      body:
-        done.error && /No LLM provider/i.test(done.error)
-          ? "No AI key is set up. Add one to the .env file in the project folder, then restart the backend."
-          : done.error ?? "Unknown error.",
+      body: explainError(done.error),
     },
-    cancelled: { icon: Ban, cls: "border-line bg-panel text-muted", title: "Run cancelled", body: "You stopped this run. Anything finished so far is still visible below." },
+    cancelled: { icon: Ban, cls: "border-line bg-panel text-muted", title: "Run stopped", body: "You stopped this run. Everything finished so far is kept." },
   } as const;
 
   const v = variants[done.status as keyof typeof variants] ?? variants.error;
@@ -152,15 +197,31 @@ export function ResultBanner({ view, onShowChecks }: { view: RunView; onShowChec
       <div className="min-w-0 flex-1 basis-[220px]">
         <div className="text-sm font-semibold">{v.title}</div>
         <p className="mt-0.5 text-[13px] leading-relaxed text-fg-2">{v.body}</p>
+        {canResume && (
+          <p className="mt-1 text-[13px] text-fg-2">
+            Resume picks up where it stopped{saved.length ? `, keeping ${saved.join(", ").replace(/, ([^,]*)$/, " and $1")}` : ""}.
+          </p>
+        )}
+        {resumeError && <p className="mt-1 text-[13px] text-bad">{resumeError}</p>}
       </div>
       <div className="flex gap-2">
+        {canResume && (
+          <button className="btn btn-primary btn-sm" onClick={onResume} disabled={resuming}>
+            {resuming ? <Loader2 className="animate-spin" /> : <RotateCw />} {resuming ? "Resuming…" : "Resume"}
+          </button>
+        )}
+        {onTryIt && (
+          <button className="btn btn-primary btn-sm" onClick={onTryIt} title="Open the website preview or run the program">
+            <Play /> Try it
+          </button>
+        )}
         {latest && (
           <button className="btn btn-ghost btn-sm" onClick={onShowChecks}>
             Test results
           </button>
         )}
         {done.project_id && (
-          <Link href={`/projects/${done.project_id}`} className="btn btn-primary btn-sm">
+          <Link href={`/projects/${done.project_id}`} className="btn btn-ghost btn-sm">
             Open project <ArrowUpRight />
           </Link>
         )}

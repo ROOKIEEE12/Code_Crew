@@ -14,6 +14,8 @@ const SOURCE_LABEL: Record<Issue["source"], string> = {
   lint: "Lint",
   security: "Security",
   test: "Test suite",
+  quality: "Web page quality",
+  runtime: "In the browser",
 };
 
 function TestRow({ c }: { c: TestCase }) {

@@ -25,7 +25,8 @@ const OPTIONS = {
   wordWrap: "on" as const,
 };
 
-export function CodeView({ path, content, original }: { path: string; content: string; original?: string }) {
+/** Read-only by default; passing `onChange` makes it an editor. */
+export function CodeView({ path, content, original, onChange }: { path: string; content: string; original?: string; onChange?: (value: string) => void }) {
   const theme = "vs-dark"; // the app is dark-only, so the editor always matches it
   const language = languageFor(path);
   if (original !== undefined) {
@@ -40,5 +41,15 @@ export function CodeView({ path, content, original }: { path: string; content: s
       />
     );
   }
-  return <Editor height="100%" theme={theme} language={language} value={content} path={path} options={OPTIONS} />;
+  return (
+    <Editor
+      height="100%"
+      theme={theme}
+      language={language}
+      value={content}
+      path={path}
+      onChange={onChange ? (v) => onChange(v ?? "") : undefined}
+      options={onChange ? { ...OPTIONS, readOnly: false, renderLineHighlight: "line" as const } : OPTIONS}
+    />
+  );
 }

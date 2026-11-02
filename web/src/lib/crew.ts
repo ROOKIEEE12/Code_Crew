@@ -79,10 +79,10 @@ export const STEP: Record<string, Step> = {
   },
   documenting: {
     id: "documenting",
-    label: "Document",
+    label: "Review",
     agent: "Reviewer",
-    plain: "Adds explanations to the code and writes a README telling you how to use it.",
-    doing: "Writing the docs",
+    plain: "Looks at screenshots of web pages and asks for visual fixes, then adds explanations to the code and writes a README.",
+    doing: "Reviewing the result",
     icon: BookOpen,
     tone: "#5eead4",
   },
@@ -113,6 +113,11 @@ export const EXAMPLES = [
     prompt: "A Python module roman.py with to_roman(n) and from_roman(s) for 1..3999 that rejects invalid numerals",
   },
   {
+    title: "Bakery website",
+    hint: "Website · designed",
+    prompt: "A modern website for a small bakery called Crumb & Co: hero, menu with prices, about us, customer reviews, opening hours and a contact form",
+  },
+  {
     title: "Tip calculator",
     hint: "Web page",
     prompt: "A tip calculator web page: bill, tip % and number of people, showing per-person totals rounded to cents",
@@ -128,3 +133,60 @@ export const EXAMPLES = [
     prompt: "An LRU cache class in Python with get/put and a configurable capacity",
   },
 ];
+
+/** One-letter badge per crew member (used in the transcript and "Minimal" style). */
+export const GLYPH: Record<string, string> = {
+  orchestrator: "O",
+  planning: "P",
+  triage: "O",
+  testing: "T",
+  coding: "C",
+  verifying: "V",
+  debugging: "D",
+  documenting: "R",
+};
+
+/** LLM role (from the backend) -> pipeline step. */
+export const ROLE_STEP = new Map<string, string>([
+  ["clarifier", "planning"],
+  ["planner", "planning"],
+  ["triage", "triage"],
+  ["test_author", "testing"],
+  ["coder", "coding"],
+  ["debugger", "debugging"],
+  ["reviewer", "documenting"],
+  ["design_review", "documenting"],
+]);
+
+/** Agent name as it appears in activity messages -> pipeline step ("orchestrator" for the supervisor). */
+export function agentStep(agent: string): string {
+  switch (agent) {
+    case "Planner":
+      return "planning";
+    case "Test Author":
+      return "testing";
+    case "Code Generation":
+    case "Coder":
+      return "coding";
+    case "Verifier":
+      return "verifying";
+    case "Debugging":
+    case "Debugger":
+      return "debugging";
+    case "Review":
+    case "Reviewer":
+      return "documenting";
+    case "LLM":
+      return "system";
+    default:
+      return "orchestrator";
+  }
+}
+
+/** Display info for any speaker in the transcript. */
+export function speaker(step: string): { name: string; tone: string; glyph: string } {
+  if (step === "orchestrator") return { name: "Orchestrator", tone: "#9d8dfa", glyph: "O" };
+  if (step === "system") return { name: "System", tone: "#868c9a", glyph: "·" };
+  const s = STEP[step];
+  return s ? { name: s.agent, tone: s.tone, glyph: GLYPH[step] ?? s.agent[0] } : { name: step, tone: "#868c9a", glyph: "?" };
+}
