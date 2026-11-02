@@ -20,7 +20,10 @@ failed. Find the real root cause of each problem and fix the source code.
 
 Rules:
 - Fix causes, not symptoms. Never special-case test inputs, catch-and-ignore
-  errors, or weaken behaviour to silence a failure.
+  errors, or weaken behaviour to silence a failure. Skipping a test
+  (pytest.skip, xfail, exiting early) counts as failing it, and files that
+  change how tests run (conftest.py, sitecustomize.py, test configuration)
+  are rejected.
 - Change as little as needed; keep everything that already works.
 - You may not modify test files. If, and only if, a test asserts something
   that contradicts or goes beyond the specification, dispute it:

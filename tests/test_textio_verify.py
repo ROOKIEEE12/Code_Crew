@@ -53,6 +53,58 @@ def test_verifier_passes_clean_project():
     assert v.level == "tested" and v.tests_passed == 1
 
 
+_LOCKED_TESTS = ("from calc import add\n\n"
+                 "def test_ok():\n    assert add(1, 1) == 2\n\n"
+                 "def test_wrong():\n    assert add(2, 2) == 5\n")
+
+
+def test_skip_from_source_code_does_not_pass():
+    """Source code that skips a failing locked test must not turn the run green."""
+    files = {
+        "calc.py": "import pytest\n\ndef add(a, b):\n    if (a, b) == (2, 2):\n        pytest.skip('unsupported')\n    return a + b\n",
+        "tests/test_calc.py": _LOCKED_TESTS,
+    }
+    v = verify(files)
+    assert not v.passed
+    assert any(i.test_id == "tests/test_calc.py::test_wrong" for i in v.issues)
+
+
+# Runs at interpreter start-up: writes an all-green report and exits before any test runs.
+_FAKE_REPORT = ("import os, glob\n"
+                "if not glob.glob('junit-js-*.xml'):\n"
+                "    open('junit-python.xml', 'w').write('<testsuite><testcase classname=\"tests.test_calc\" name=\"test_ok\"/>'\n"
+                "        '<testcase classname=\"tests.test_calc\" name=\"test_wrong\"/></testsuite>')\n"
+                "    os._exit(0)\n")
+
+_HIJACKS = {
+    "root conftest": {"conftest.py": (
+        "import pytest\n\n@pytest.hookimpl(hookwrapper=True)\n"
+        "def pytest_runtest_makereport(item, call):\n    outcome = yield\n    outcome.get_result().outcome = 'passed'\n")},
+    "sitecustomize": {"sitecustomize.py": _FAKE_REPORT},
+    "shadowed pytest": {"src/pytest.py": _FAKE_REPORT},
+    "pytest.ini addopts": {"pytest.ini": "[pytest]\naddopts = --deselect tests/test_calc.py::test_wrong\n"},
+    "pyproject addopts": {"pyproject.toml": "[tool.pytest.ini_options]\naddopts = \"-k test_ok\"\n"},
+}
+
+
+@pytest.mark.parametrize("name", list(_HIJACKS))
+def test_source_files_cannot_change_how_locked_tests_run(name):
+    files = {"calc.py": "def add(a, b):\n    return a + b\n", "tests/test_calc.py": _LOCKED_TESTS, **_HIJACKS[name]}
+    v = verify(files)
+    assert not v.passed, f"{name} made a failing suite pass"
+
+
+def test_test_authors_own_conftest_still_works():
+    files = {
+        "calc.py": "def add(a, b):\n    return a + b\n",
+        "tests/conftest.py": "import pytest\n\n@pytest.fixture\ndef two():\n    return 2\n",
+        "tests/test_calc.py": "from calc import add\n\ndef test_add(two):\n    assert add(two, two) == 4\n",
+    }
+    v = verify(files)
+    assert v.passed, v.issues
+    assert v.tests_passed == 1
+
+
 def test_sandbox_hides_secrets(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-secret")
     files = {

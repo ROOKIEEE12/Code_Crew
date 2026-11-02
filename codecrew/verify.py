@@ -554,14 +554,38 @@ def _parse_junit(xml_path: Path, default_file: str, root: Path) -> list[TestCase
     return cases
 
 
+# Files Python or pytest load before any test runs. Written by the Coder or Debugger
+# (not the Test Author), they could change the outcome of the locked tests.
+_HARNESS_FILES = {"conftest.py", "sitecustomize.py", "usercustomize.py"}
+_HARNESS_MODULES = {"pytest", "_pytest", "pluggy"}
+# The verifier's own pytest config: with -c, pytest ignores any pytest.ini, pyproject.toml,
+# setup.cfg or tox.ini in the project, so their addopts cannot deselect or rewrite tests.
+_PYTEST_INI = ".codecrew-pytest.ini"
+
+
+def check_test_harness(files: dict[str, str]) -> list[Issue]:
+    issues = []
+    for path in files:
+        if is_test_path(path):
+            continue
+        parts = path.split("/")
+        top = parts[1] if parts[0] == "src" and len(parts) > 1 else parts[0]
+        if posixpath.basename(path) in _HARNESS_FILES or posixpath.splitext(top)[0] in _HARNESS_MODULES:
+            issues.append(Issue(source="contract", severity="error", file=path, message=(
+                f"{path} would change how the locked tests run, which source code may not do. "
+                "Remove it; shared test fixtures belong in tests/conftest.py, written by the Test Author.")))
+    return issues
+
+
 def run_python_tests(root: Path, files: dict[str, str]) -> Optional[TestRun]:
     tests = [p for p in files if p.endswith(".py") and is_test_path(p) and posixpath.basename(p).startswith("test_")]
     if not tests:
         return None
     xml = root / "junit-python.xml"
+    (root / _PYTEST_INI).write_text("[pytest]\n", encoding="utf-8")
     res = sandbox.run(
-        [*sandbox.python_cmd(), "-m", "pytest", *tests, "-q", "-p", "no:cacheprovider",
-         f"--junitxml={xml.name}", "-o", "junit_family=xunit1"],
+        [*sandbox.python_cmd(), "-m", "pytest", "-c", _PYTEST_INI, "--rootdir", ".", *tests, "-q",
+         "-p", "no:cacheprovider", f"--junitxml={xml.name}", "-o", "junit_family=xunit1"],
         root,
     )
     if res.timed_out or not xml.exists():
@@ -620,10 +644,11 @@ def _step(progress: Optional[Progress], key: str, label: str, cmd: str):
 def _test_result(run: TestRun) -> tuple[bool, str]:
     if not run.ran or run.collection_error:
         return False, "could not run cleanly"
-    cases = [c for c in run.cases if c.outcome != "skipped"]
-    passed = sum(1 for c in cases if c.outcome == "passed")
-    failed = len(cases) - passed
-    return failed == 0, f"{passed} passed" + (f" · {failed} failed" if failed else "")
+    passed = sum(1 for c in run.cases if c.outcome == "passed")
+    skipped = sum(1 for c in run.cases if c.outcome == "skipped")
+    failed = len(run.cases) - passed - skipped
+    return passed == len(run.cases), (f"{passed} passed" + (f" · {failed} failed" if failed else "")
+                                      + (f" · {skipped} skipped" if skipped else ""))
 
 
 def verify(files: dict[str, str], spec: Optional[Spec] = None, run_tests: bool = True,
@@ -643,7 +668,7 @@ def verify(files: dict[str, str], spec: Optional[Spec] = None, run_tests: bool =
              "\n\n".join(f"{p}:\n{v.syntax[p].output}" for p in bad_syntax))
 
         done = _step(progress, "contracts", "Checked links between files", "imports, element ids, spec signatures")
-        found = check_web_contracts(files) + check_python_imports(files) + check_spec(spec, files)
+        found = check_web_contracts(files) + check_python_imports(files) + check_spec(spec, files) + check_test_harness(files)
         v.issues += found
         errs = [i for i in found if i.severity == "error"]
         done(not errs, f"{len(errs)} problem(s)" if errs else "all consistent",
@@ -703,8 +728,13 @@ def verify(files: dict[str, str], spec: Optional[Spec] = None, run_tests: bool =
             if c.outcome in ("failed", "error"):
                 v.issues.append(Issue(source="test", severity="error", file=c.file, test_id=c.id,
                                       message=f"{c.message}\n{c.details}".strip()[-3000:]))
+            elif c.outcome == "skipped":
+                # A locked test must actually run: a skip (or xfail) never counts as a pass.
+                v.issues.append(Issue(source="test", severity="error", file=c.file, test_id=c.id, message=(
+                    f"The test was skipped ({c.message or 'no reason given'}). Locked tests must run; "
+                    "code may not skip them, and a skip does not count as passing.")))
 
-    cases = [c for r in v.test_runs for c in r.cases if c.outcome != "skipped"]
+    cases = [c for r in v.test_runs for c in r.cases]
     v.tests_total = len(cases)
     v.tests_passed = sum(1 for c in cases if c.outcome == "passed")
     expects_tests = bool(spec and any(f.testable for f in spec.files))
