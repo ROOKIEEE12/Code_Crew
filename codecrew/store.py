@@ -37,6 +37,15 @@ CREATE TABLE IF NOT EXISTS events (
     PRIMARY KEY (run_id, seq)
 );
 CREATE INDEX IF NOT EXISTS runs_created ON runs(created_at DESC);
+CREATE TABLE IF NOT EXISTS run_images (
+    run_id TEXT NOT NULL,
+    id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    media_type TEXT NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (run_id, id)
+);
 """
 
 
@@ -89,6 +98,34 @@ class Store:
             rows = self._db.execute(sql, (*args, limit)).fetchall()
         keys = ("id", "mode", "requirement", "project_id", "status", "phase", "created_at", "finished_at")
         return [dict(zip(keys, r)) for r in rows]
+
+    def add_image(self, run_id: str, kind: str, label: str, media_type: str, data: bytes) -> int:
+        with self._lock:
+            row = self._db.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM run_images WHERE run_id=?", (run_id,)).fetchone()
+            self._db.execute("INSERT INTO run_images (run_id, id, kind, label, media_type, data) VALUES (?,?,?,?,?,?)",
+                             (run_id, row[0], kind, label, media_type, data))
+            self._db.commit()
+        return row[0]
+
+    def get_image(self, run_id: str, image_id: int) -> Optional[tuple[str, bytes]]:
+        with self._lock:
+            row = self._db.execute("SELECT media_type, data FROM run_images WHERE run_id=? AND id=?",
+                                   (run_id, image_id)).fetchone()
+        return (row[0], bytes(row[1])) if row else None
+
+    def images(self, run_id: str, kind: str) -> list[tuple[str, bytes]]:
+        with self._lock:
+            rows = self._db.execute("SELECT media_type, data FROM run_images WHERE run_id=? AND kind=? ORDER BY id",
+                                    (run_id, kind)).fetchall()
+        return [(r[0], bytes(r[1])) for r in rows]
+
+    def delete_run(self, run_id: str) -> bool:
+        with self._lock:
+            self._db.execute("DELETE FROM events WHERE run_id=?", (run_id,))
+            self._db.execute("DELETE FROM run_images WHERE run_id=?", (run_id,))
+            gone = self._db.execute("DELETE FROM runs WHERE id=?", (run_id,)).rowcount
+            self._db.commit()
+        return bool(gone)
 
     def mark_interrupted(self) -> int:
         """Runs left 'running'/'queued' by a previous process cannot resume."""

@@ -7,8 +7,13 @@ could not be checked is reported as "unchecked" rather than "passed".
   1. syntax     - ast / node --check / json / tag balance / brace balance
   2. contracts  - HTML asset links, JS DOM ids, Python imports & names
   3. spec       - every planned file and function actually exists
-  4. lint       - ruff (pyflakes rules) and bandit (security)
-  5. tests      - pytest / node:test in the sandbox, parsed from JUnit XML
+  4. quality    - web pages: viewport, placeholder text, every section of the
+                  design brief, palette use, responsive CSS
+  5. browser    - web pages opened in headless Chromium at desktop and phone
+                  size: JavaScript errors on load, sideways scrolling, empty
+                  sections (only when Playwright is installed)
+  6. lint       - ruff (pyflakes rules) and bandit (security)
+  7. tests      - pytest / node:test in the sandbox, parsed from JUnit XML
 """
 
 from __future__ import annotations
@@ -22,9 +27,9 @@ import sys
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
-from codecrew import sandbox
+from codecrew import render, sandbox
 from codecrew.schemas import FileCheck, Issue, Spec, TestCaseResult, TestRun, Verification
 from codecrew.textio import language_for
 
@@ -176,6 +181,145 @@ def check_web_contracts(files: dict[str, str]) -> list[Issue]:
                 if not created:
                     issues.append(Issue(source="contract", severity="error", file=path, line=lineno,
                                         message=f"Looks up element id '{el_id}', which no HTML file defines and no script creates."))
+    return issues
+
+
+# ---------------------------------------------------------------- 3b. web quality
+
+_PLACEHOLDER = re.compile(
+    r"lorem ipsum|dolor sit amet|placeholder text|your (?:text|content|title|tagline) here|\bTODO\b|\bTBD\b|"
+    r"\b(?:feature|service|product|item) (?:one|two|three|[123])\b|example\.com", re.IGNORECASE)
+
+
+class _VisibleText(HTMLParser):
+    """Text a visitor would read, with line numbers (scripts and styles excluded)."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.skip = 0
+        self.chunks: list[tuple[int, str]] = []
+        self.imgs_without_alt: list[int] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style", "noscript", "template"):
+            self.skip += 1
+        elif tag == "img" and "alt" not in dict(attrs):
+            self.imgs_without_alt.append(self.getpos()[0])
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style", "noscript", "template"):
+            self.skip = max(0, self.skip - 1)
+
+    def handle_data(self, data):
+        if not self.skip and data.strip():
+            self.chunks.append((self.getpos()[0], data.strip()))
+
+
+def _hex6(value: str) -> str:
+    h = value.strip().lower().lstrip("#")
+    return "#" + ("".join(c * 2 for c in h) if len(h) == 3 else h[:6])
+
+
+def web_pages(files: dict[str, str]) -> list[str]:
+    return sorted(p for p in files if language_for(p) == "html" and not is_test_path(p))
+
+
+def check_web_quality(files: dict[str, str], spec: Optional[Spec]) -> list[Issue]:
+    """Deterministic checks that a web page is complete and usable, beyond "it parses"."""
+    pages = web_pages(files)
+    if not pages:
+        return []
+    issues: list[Issue] = []
+    design = spec.design if spec else None
+    # With a design brief these are part of the plan, so missing them is a defect.
+    ux = "error" if design else "warning"
+    css = "\n".join(c for p, c in files.items() if p.endswith(".css"))
+    css += "\n".join(m for code in (files[p] for p in pages) for m in re.findall(r"<style[^>]*>([\s\S]*?)</style>", code, re.IGNORECASE))
+
+    for path in pages:
+        code = files[path]
+        low = code.lower()
+        if not re.search(r"<meta[^>]+name\s*=\s*[\"']?viewport", low):
+            issues.append(Issue(source="quality", severity=ux, file=path, message=(
+                'Missing <meta name="viewport" content="width=device-width, initial-scale=1">, '
+                "so phones show a tiny zoomed-out desktop page.")))
+        if not re.search(r"<title>\s*[^<\s]", low):
+            issues.append(Issue(source="quality", severity="warning", file=path, message="The page has no <title>."))
+        if not re.search(r"<html[^>]*\slang\s*=", low):
+            issues.append(Issue(source="quality", severity="warning", file=path, message='<html> has no lang attribute (e.g. lang="en").'))
+        text = _VisibleText()
+        try:
+            text.feed(code)
+        except Exception:
+            continue
+        for line in text.imgs_without_alt[:3]:
+            issues.append(Issue(source="quality", severity="warning", file=path, line=line,
+                                message="<img> has no alt text for screen readers."))
+        for line, chunk in text.chunks:
+            m = _PLACEHOLDER.search(chunk)
+            if m:
+                issues.append(Issue(source="quality", severity="error", file=path, line=line, message=(
+                    f"Placeholder text '{m.group(0)}' is visible on the page. Write real content for this project.")))
+                break
+
+    if design:
+        ids = {p: _scan_html(files[p]).ids for p in pages}
+        for sec in design.sections:
+            page = sec.page if sec.page in ids else (pages[0] if len(pages) == 1 else sec.page)
+            if page not in ids:
+                issues.append(Issue(source="quality", severity="error", file=sec.page, message=(
+                    f"Design section '{sec.name}' belongs on {sec.page}, which does not exist.")))
+            elif sec.id not in ids[page]:
+                issues.append(Issue(source="quality", severity="error", file=page, message=(
+                    f'Design section \'{sec.name}\' is missing: no element with id="{sec.id}" in {page}. '
+                    f"It should show: {sec.content[:200]}")))
+        planned = {_hex6(c.hex) for c in design.palette if re.fullmatch(r"#?[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?", c.hex.strip())}
+        css_low = css.lower()
+        short = {h: "#" + h[1] + h[3] + h[5] for h in planned if h[1] == h[2] and h[3] == h[4] and h[5] == h[6]}
+        used = {h for h in planned if h in css_low or (h in short and re.search(re.escape(short[h]) + r"\b", css_low))}
+        if len(planned) >= 3 and len(used) * 2 < len(planned):
+            issues.append(Issue(source="quality", severity="warning", message=(
+                f"The CSS uses only {len(used)} of the {len(planned)} planned colours "
+                f"(missing: {', '.join(sorted(planned - used))}).")))
+
+    if css.strip() or design:
+        if not re.search(r"@media|clamp\(|minmax\(|auto-fit|auto-fill|@container", css, re.IGNORECASE):
+            issues.append(Issue(source="quality", severity=ux, message=(
+                "There is no responsive CSS (no @media, clamp() or auto-fit grid), so the layout will not adapt to phones.")))
+        if design and not re.search(r":hover|:focus", css):
+            issues.append(Issue(source="quality", severity="warning", message="No :hover or :focus styles: links and buttons give no feedback."))
+        declarations = css.count(";")
+        if design and declarations < 60:
+            issues.append(Issue(source="quality", severity="warning", message=(
+                f"Very little styling ({declarations} CSS declarations) for a designed page.")))
+    return issues
+
+
+def browser_issues(files: dict[str, str], spec: Optional[Spec]) -> list[Issue]:
+    """Opens each page in headless Chromium; only call when render.available()."""
+    pages = web_pages(files)[:5]
+    design = spec.design if spec else None
+    sections: dict[str, list[str]] = {}
+    for sec in design.sections if design else []:
+        page = sec.page if sec.page in pages else (pages[0] if len(pages) == 1 else sec.page)
+        sections.setdefault(page, []).append(sec.id)
+    issues: list[Issue] = []
+    for r in render.check_pages({p: c for p, c in files.items() if not is_test_path(p)}, pages, sections):
+        for err in r.page_errors[:3]:
+            issues.append(Issue(source="runtime", severity="error", file=r.page, message=(
+                f"JavaScript error in the browser when {r.page} loads: {err}")))
+        for err in [e for e in r.console_errors if "Failed to load resource" not in e][:3]:
+            issues.append(Issue(source="runtime", severity="warning", file=r.page, message=f"Browser console error: {err}"))
+        for name in sorted(set(r.missing_files))[:3]:
+            issues.append(Issue(source="runtime", severity="error", file=r.page, message=(
+                f"In the browser, {r.page} asked for '{name}', which does not exist.")))
+        if r.phone_overflow_px > 40:
+            issues.append(Issue(source="quality", severity="error" if design else "warning", file=r.page, message=(
+                f"On a 390px-wide phone the page is {r.phone_overflow_px}px wider than the screen and scrolls sideways. "
+                "Find the element with a fixed width or long unbroken content and make it fit.")))
+        for sid in r.hidden_sections:
+            issues.append(Issue(source="quality", severity="warning", file=r.page, message=(
+                f'Section id="{sid}" exists but takes up no space on the page (empty or hidden).')))
     return issues
 
 
@@ -457,22 +601,99 @@ def run_js_tests(root: Path, files: dict[str, str]) -> Optional[TestRun]:
 
 # ---------------------------------------------------------------- orchestration
 
-def verify(files: dict[str, str], spec: Optional[Spec] = None, run_tests: bool = True) -> Verification:
+Progress = Callable[[dict], None]
+
+
+def _step(progress: Optional[Progress], key: str, label: str, cmd: str):
+    """Reports a check as running, and returns a function that reports its result."""
+    if progress:
+        progress({"key": key, "label": label, "cmd": cmd, "status": "running"})
+
+    def done(ok: bool, result: str, output: str = "") -> None:
+        if progress:
+            progress({"key": key, "label": label, "cmd": cmd, "status": "ok" if ok else "bad",
+                      "result": result, "output": output[-2500:]})
+
+    return done
+
+
+def _test_result(run: TestRun) -> tuple[bool, str]:
+    if not run.ran or run.collection_error:
+        return False, "could not run cleanly"
+    cases = [c for c in run.cases if c.outcome != "skipped"]
+    passed = sum(1 for c in cases if c.outcome == "passed")
+    failed = len(cases) - passed
+    return failed == 0, f"{passed} passed" + (f" · {failed} failed" if failed else "")
+
+
+def verify(files: dict[str, str], spec: Optional[Spec] = None, run_tests: bool = True,
+           progress: Optional[Progress] = None, browser: bool = True) -> Verification:
     v = Verification()
     with sandbox.workspace(files) as root:
+        langs = sorted({"python" if p.endswith(".py") else "node" for p in files if p.endswith((".py", ".js", ".mjs", ".cjs"))})
+        done = _step(progress, "syntax", "Checked syntax", " + ".join(
+            {"python": "python ast", "node": "node --check"}[x] for x in langs) or "file structure")
         for path, code in files.items():
             v.syntax[path] = check_syntax(path, code, root)
-        for path, check in v.syntax.items():
-            if check.status == "failed":
-                v.issues.append(Issue(source="syntax", severity="error", file=path, message=check.output))
-        v.issues += check_web_contracts(files)
-        v.issues += check_python_imports(files)
-        v.issues += check_spec(spec, files)
-        v.issues += run_lint(root, files)
+        bad_syntax = [p for p, c in v.syntax.items() if c.status == "failed"]
+        for path in bad_syntax:
+            v.issues.append(Issue(source="syntax", severity="error", file=path, message=v.syntax[path].output))
+        checked = sum(1 for c in v.syntax.values() if c.status != "unchecked")
+        done(not bad_syntax, f"{len(bad_syntax)} file(s) broken" if bad_syntax else f"{checked} file(s) ok",
+             "\n\n".join(f"{p}:\n{v.syntax[p].output}" for p in bad_syntax))
+
+        done = _step(progress, "contracts", "Checked links between files", "imports, element ids, spec signatures")
+        found = check_web_contracts(files) + check_python_imports(files) + check_spec(spec, files)
+        v.issues += found
+        errs = [i for i in found if i.severity == "error"]
+        done(not errs, f"{len(errs)} problem(s)" if errs else "all consistent",
+             "\n".join(f"{i.file or 'project'}: {i.message.splitlines()[0]}" for i in found[:12]))
+
+        if web_pages(files):
+            done = _step(progress, "quality", "Checked the web page quality", "viewport, real content, design sections, responsive CSS")
+            found = check_web_quality(files, spec)
+            v.issues += found
+            errs = [i for i in found if i.severity == "error"]
+            done(not errs, f"{len(errs)} problem(s), {len(found) - len(errs)} note(s)" if found else "looks complete",
+                 "\n".join(f"{i.file or 'project'}: {i.message}" for i in found[:12]))
+            if browser and render.available():
+                done = _step(progress, "browser", "Opened the page in a real browser", "chromium · desktop 1280px + phone 390px")
+                try:
+                    found = browser_issues(files, spec)
+                except Exception as e:  # a browser hiccup is not the project's fault
+                    done(True, f"skipped ({type(e).__name__})")
+                else:
+                    v.issues += found
+                    errs = [i for i in found if i.severity == "error"]
+                    done(not errs, f"{len(errs)} problem(s), {len(found) - len(errs)} note(s)" if found else "no errors, fits on phones",
+                         "\n".join(f"{i.file or 'project'}: {i.message}" for i in found[:12]))
+
+        if any(p.endswith(".py") for p in files):
+            done = _step(progress, "lint", "Lint and security scan", "ruff + bandit")
+            found = run_lint(root, files)
+            v.issues += found
+            errs = [i for i in found if i.severity == "error"]
+            done(not errs, f"{len(errs)} error(s), {len(found) - len(errs)} warning(s)" if found else "clean",
+                 "\n".join(f"{i.file}:{i.line} {i.message}" for i in found[:12]))
+
         if run_tests:
-            for run in (run_python_tests(root, files), run_js_tests(root, files)):
+            for key, label, cmd, runner in (
+                ("pytest", "Ran Python tests", "pytest -q", run_python_tests),
+                ("node", "Ran JavaScript tests", "node --test", run_js_tests),
+            ):
+                has_tests = any(
+                    (p.endswith(".py") and is_test_path(p) and posixpath.basename(p).startswith("test_")) if key == "pytest"
+                    else re.search(r"\.test\.(?:c|m)?js$", p) for p in files)
+                if not has_tests:
+                    continue
+                done = _step(progress, key, label, cmd)
+                run = runner(root, files)
                 if run:
                     v.test_runs.append(run)
+                    ok, result = _test_result(run)
+                    done(ok, result, run.output)
+                else:
+                    done(True, "no tests")
 
     for run in v.test_runs:
         if run.collection_error or not run.ran:

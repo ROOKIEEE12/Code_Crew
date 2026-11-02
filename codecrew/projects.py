@@ -8,8 +8,10 @@ generated_projects/<project-id>/
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import stat
 import time
 from pathlib import Path
 from typing import Optional
@@ -67,6 +69,7 @@ def save(project_id: str, spec: Spec, files: dict[str, str], tests: dict[str, st
         name=spec.project_name,
         spec=spec.model_dump(),
         verification=verification.model_dump() if verification else None,
+        verification_stale=False,
         updated_at=time.time(),
     )
     meta.setdefault("created_at", time.time())
@@ -105,6 +108,7 @@ def load(project_id: str) -> dict:
         "name": meta.get("name", project_id),
         "spec": Spec.model_validate(meta["spec"]) if meta.get("spec") else None,
         "verification": meta.get("verification"),
+        "verification_stale": bool(meta.get("verification_stale")),
         "history": meta.get("history", []),
         "created_at": meta.get("created_at", root.stat().st_ctime),
         "updated_at": meta.get("updated_at", root.stat().st_mtime),
@@ -134,6 +138,7 @@ def list_all() -> list[dict]:
             "name": meta.get("name", d.name),
             "summary": (meta.get("spec") or {}).get("summary", ""),
             "passed": verification.get("passed"),
+            "verification_stale": bool(meta.get("verification_stale")),
             "tests_total": verification.get("tests_total"),
             "tests_passed": verification.get("tests_passed"),
             "legacy": not meta,
@@ -145,8 +150,51 @@ def list_all() -> list[dict]:
     return out
 
 
+def _update_meta(root: Path, **changes) -> None:
+    meta_path = root / META_DIR / "project.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+    meta.update(changes, updated_at=time.time())
+    meta_path.parent.mkdir(exist_ok=True)
+    meta_path.write_text(json.dumps(meta, indent=1), encoding="utf-8")
+
+
+def rename(project_id: str, name: str) -> None:
+    """Changes the display name; the project id (folder) stays the same."""
+    root = project_path(project_id)
+    if not root.is_dir():
+        raise ProjectNotFound(project_id)
+    _update_meta(root, name=name)
+
+
+def write_file(project_id: str, rel: str, content: str) -> None:
+    """Saves a hand edit to an existing file. The last verification no longer
+    describes the code, so it is marked stale until the next run."""
+    root = project_path(project_id)
+    rel = safe_relpath(rel)
+    target = root / rel
+    if not root.is_dir() or META_DIR in Path(rel).parts or not target.is_file():
+        raise ProjectNotFound(rel)
+    target.write_text(content, encoding="utf-8", newline="\n")
+    _update_meta(root, verification_stale=True)
+
+
+def _clear_readonly(func, path, _exc_info) -> None:
+    """rmtree error hook: Windows refuses to delete read-only files and folders
+    (OneDrive often marks synced folders read-only), so clear the flag and retry."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def delete(project_id: str) -> None:
     root = project_path(project_id)
     if not root.is_dir():
         raise ProjectNotFound(project_id)
-    shutil.rmtree(root)
+    for attempt in range(5):
+        try:
+            shutil.rmtree(root, onerror=_clear_readonly)
+            return
+        except PermissionError:
+            # Still locked by another program (OneDrive syncing, Explorer, an editor). Wait briefly.
+            if attempt == 4:
+                raise
+            time.sleep(0.4 * (attempt + 1))

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from codecrew import llm
 from codecrew.context import RunContext
 from codecrew.schemas import Spec, SpecOut
@@ -15,10 +17,11 @@ from your spec, and the Test Author writes unit tests from it BEFORE any
 code exists, so names, signatures and behaviours must be exact.
 
 Design rules:
-- Keep the file set as small as the requirement genuinely allows.
+- Keep the file set focused: no files the requirement does not need, but
+  never trade away a complete, polished result to save a file.
 - Use only the Python standard library and browser built-ins unless the
   user explicitly asks for a library; tests run offline with nothing extra
-  installed.
+  installed. Web pages may load Google Fonts with a <link>.
 - Separate pure logic from I/O so it can be unit-tested:
   * Python: logic in importable modules with no side effects at import
     time; any CLI/input()/printing lives in main() behind
@@ -39,6 +42,33 @@ Design rules:
 - Do NOT plan test files or README.md; other agents own those.
 - Paths are relative POSIX paths without hidden files or '..'.
 - Record every ambiguity you resolved in `assumptions`.
+
+Web pages (anything with an .html file) need a `design` brief; set it to
+null only for projects with no web page. You are also the team's designer,
+so plan something a professional studio would ship, never a bare page:
+- `sections`: every section top to bottom (header/nav, hero, the content
+  sections the request implies, footer), each with an exact HTML `id` and
+  its real content: headline, copy, the actual items (features, plans,
+  team members, products...), buttons. Write content specific to this
+  project, never "Feature 1" or lorem ipsum. A landing page or company
+  site usually needs 6-9 sections; an app page needs its working UI plus
+  a header and footer.
+- `palette`: 4-8 hex colours with roles (background, surface, text, muted
+  text, accent, accent hover...) and strong text contrast.
+- `typography`: font families with fallbacks, the type scale and weights.
+- `style`: the look in a few sentences (e.g. "dark, glassy cards, soft
+  gradients, generous whitespace, rounded 16px corners").
+- `interactions`: hover/focus states, smooth scrolling, a phone menu,
+  reveal animations, and any behaviour the request needs.
+- `responsive`: how it adapts on phones (single column, collapsed nav...).
+- Images: no external image URLs (they break); plan CSS gradients, shapes,
+  inline SVG illustrations and icons instead.
+- When the user gave reference links or images, follow them closely:
+  same section order, layout, density, colours and typographic feel. Say
+  how in `reference_notes`. If a reference could not be read, say so in
+  `assumptions` instead of guessing what it contained.
+Automated checks will confirm every section id exists, the page fits on a
+phone and contains no placeholder text.
 """
 
 
@@ -64,7 +94,37 @@ def validate_spec(spec: Spec) -> Spec:
     ids = [ac.id for ac in spec.acceptance_criteria]
     if len(ids) != len(set(ids)):
         raise ValueError("Acceptance criteria ids must be unique.")
+    validate_design(spec)
     return spec
+
+
+_HTML_ID = re.compile(r"^[A-Za-z][\w-]*$")
+
+
+def validate_design(spec: Spec) -> None:
+    pages = [f.path for f in spec.files if f.path.endswith(".html")]
+    if not pages:
+        return
+    d = spec.design
+    if d is None:
+        raise ValueError("This project has web pages, so `design` is required: sections with ids and real content, "
+                         "palette, typography, style, interactions and responsive behaviour.")
+    if len(d.sections) < 3:
+        raise ValueError("The design needs every page section (at least a header, the main content and a footer).")
+    if not 3 <= len(d.palette) <= 10:
+        raise ValueError("The design palette needs 4 to 8 colours.")
+    seen: set[tuple[str, str]] = set()
+    for sec in d.sections:
+        if sec.page not in pages:
+            if len(pages) != 1:
+                raise ValueError(f"Design section '{sec.name}' is on '{sec.page}', which is not a planned page ({', '.join(pages)}).")
+            sec.page = pages[0]
+        sec.id = sec.id.strip().lstrip("#")
+        if not _HTML_ID.match(sec.id):
+            raise ValueError(f"Design section '{sec.name}' has an invalid HTML id '{sec.id}'.")
+        if (sec.page, sec.id) in seen:
+            raise ValueError(f"Two design sections use id '{sec.id}' on {sec.page}.")
+        seen.add((sec.page, sec.id))
 
 
 def _assert_acyclic(spec: Spec) -> None:
@@ -85,5 +145,11 @@ def _assert_acyclic(spec: Spec) -> None:
         visit(node, [])
 
 
-def plan(ctx: RunContext, requirement: str) -> Spec:
-    return llm.call_structured(ctx, "planner", SYSTEM, f"Requirement:\n{requirement}", SpecOut, validate=validate_spec)
+def plan(ctx: RunContext, requirement: str, references: str = "", images: list[llm.Image] | None = None) -> Spec:
+    user = f"Requirement:\n{requirement}"
+    if references:
+        user += f"\n\n{references}"
+    if images:
+        user += (f"\n\n{len(images)} reference image(s) are attached. Study the layout, sections, colours, type and "
+                 "spacing in them and turn what you see into the design brief.")
+    return llm.call_structured(ctx, "planner", SYSTEM, user, SpecOut, validate=validate_spec, images=images)

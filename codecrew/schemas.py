@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 Language = Literal["python", "javascript", "typescript", "html", "css", "json", "markdown", "text"]
 
@@ -39,6 +39,29 @@ class AcceptanceCriterion(BaseModel):
     verification: Literal["automated_test", "static_check", "manual"]
 
 
+class ColorToken(BaseModel):
+    name: str = Field(description="Role of the colour, e.g. 'background', 'surface', 'text', 'muted', 'accent'.")
+    hex: str = Field(description="Hex value, e.g. '#0b0b0f'.")
+    usage: str = Field(description="Where it is used.")
+
+
+class PageSection(BaseModel):
+    id: str = Field(description="The HTML id attribute the section element must have, e.g. 'pricing'.")
+    page: str = Field(description="HTML file the section is on, e.g. 'index.html'.")
+    name: str = Field(description="Short name, e.g. 'Pricing'.")
+    content: str = Field(description="What it shows: the real headline, copy, items and visuals, specific to this project.")
+
+
+class DesignBrief(BaseModel):
+    style: str = Field(description="The look and feel in 2-4 sentences: mood, density, shapes, imagery, motion.")
+    palette: list[ColorToken] = Field(description="4 to 8 colours that work together with good contrast.")
+    typography: str = Field(description="Font families (with fallbacks), the type scale and weights.")
+    sections: list[PageSection] = Field(description="Every page section in order, top to bottom, including header/nav and footer.")
+    interactions: list[str] = Field(description="Hover/focus states, animations, menus, toggles and other behaviour.")
+    responsive: str = Field(description="How the layout adapts on phones and tablets.")
+    reference_notes: str = Field(description="How the design follows the user's reference links or images; empty if there were none.")
+
+
 class SpecOut(BaseModel):
     project_name: str = Field(description="short-kebab-case-name")
     project_type: Literal["script", "cli_tool", "web_app", "backend_api", "library", "other"]
@@ -47,6 +70,15 @@ class SpecOut(BaseModel):
     files: list[FileSpec]
     acceptance_criteria: list[AcceptanceCriterion]
     assumptions: list[str] = Field(description="Ambiguities in the request and how they were resolved.")
+    design: Optional[DesignBrief] = Field(description="Required for anything with a web page; null for projects without a UI.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _older_specs(cls, data):
+        # Specs saved before design briefs existed load with no design.
+        if isinstance(data, dict) and "design" not in data:
+            data = {**data, "design": None}
+        return data
 
 
 Spec = SpecOut
@@ -59,10 +91,76 @@ class TriageOut(BaseModel):
     new_acceptance_criteria: list[AcceptanceCriterion]
     instructions: str = Field(description="Precise instructions for the coder.")
     update_readme: bool
+    design: Optional[DesignBrief] = Field(description="The complete updated design brief when the change alters the look or the page sections; otherwise null.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_design(cls, data):
+        if isinstance(data, dict) and "design" not in data:
+            data = {**data, "design": None}
+        return data
+
+
+class DesignReviewOut(BaseModel):
+    score: int = Field(description="1 to 10: how well the page matches the design brief and references, and how polished it looks.")
+    strengths: list[str] = Field(description="Up to 4 things that already look good.")
+    fixes: list[str] = Field(description="Up to 8 specific visual fixes, most important first, each naming the section or element and exactly what to change. Empty if nothing important is wrong.")
+
+
+class Reference(BaseModel):
+    """What the reference reader extracted from a link in the request."""
+    url: str
+    ok: bool
+    error: str = ""
+    title: str = ""
+    description: str = ""
+    outline: list[str] = []
+    colors: list[str] = []
+    fonts: list[str] = []
+    excerpt: str = ""
+
+
+class ImageRef(BaseModel):
+    id: int
+    kind: Literal["reference", "screenshot"]
+    label: str = ""
+    media_type: str
+
+
+class DesignReview(BaseModel):
+    round: int
+    score: int
+    strengths: list[str] = []
+    fixes: list[str] = []
+    applied: bool = False  # the Coder made the fixes
+    kept: bool = True      # False when the polished version broke a check and was reverted
+    screenshots: list[int] = []
 
 
 class ReadmeOut(BaseModel):
     readme: str
+
+
+class QuestionOption(BaseModel):
+    label: str = Field(description="A short answer the user can pick, under 60 characters.")
+    recommended: bool = Field(description="True for exactly one option: the sensible default if the user does not answer.")
+
+
+class ClarifyQuestion(BaseModel):
+    question: str = Field(description="One short question in plain language, under 120 characters.")
+    why: str = Field(description="Why the answer changes what gets built, in one short sentence.")
+    options: list[QuestionOption] = Field(description="2 to 4 mutually exclusive answers.")
+
+
+class ClarifyOut(BaseModel):
+    questions: list[ClarifyQuestion] = Field(
+        description="0 to 2 questions. Empty when the requirement is already clear enough to build.")
+
+
+class Clarification(BaseModel):
+    question: str
+    answer: str
+    auto: bool = False
 
 
 # ---------------------------------------------------------------- verification
@@ -74,7 +172,7 @@ class FileCheck(BaseModel):
 
 
 class Issue(BaseModel):
-    source: Literal["syntax", "contract", "test", "lint", "security", "spec"]
+    source: Literal["syntax", "contract", "test", "lint", "security", "spec", "quality", "runtime"]
     severity: Literal["error", "warning"]
     file: Optional[str] = None
     line: Optional[int] = None
@@ -166,6 +264,12 @@ class RunState(BaseModel):
     best_round: int = 0
     debug_rounds: list[DebugRound] = []
     disputes_used: int = 0
+    ask_questions: bool = False
+    clarifications: list[Clarification] = []
+    references: list[Reference] = []
+    images: list[ImageRef] = []
+    design_reviews: list[DesignReview] = []
+    user_notes: list[str] = []
     readme: str = ""
     activity: list[ActivityEntry] = []
     usage: Usage = Usage()

@@ -12,7 +12,7 @@ import ast
 from codecrew import llm
 from codecrew.context import RunContext
 from codecrew.schemas import DebugRound, Issue, Spec
-from codecrew.textio import FILE_BLOCK_INSTRUCTIONS, parse_disputes, parse_file_blocks, render_file_blocks
+from codecrew.textio import FILE_BLOCK_INSTRUCTIONS, parse_disputes, parse_file_blocks, render_file_blocks, strip_reasoning
 from codecrew.verify import is_test_path
 
 SYSTEM = f"""You are the Debugging Agent. Verification of the project
@@ -29,8 +29,14 @@ Rules:
 Why the test contradicts the specification, quoting the spec.
 <<<END DISPUTE>>>
 
+- Quality and runtime findings (a missing design section, placeholder
+  text, a JavaScript error in the browser, a page wider than a phone
+  screen) are real defects: fix them in the HTML/CSS/JS, keeping the
+  design intact.
 - Return complete contents for every source file you change.
 - Do not repeat a fix that an earlier round already tried without success.
+- Begin your reply with a short diagnosis: 1 to 3 lines, each starting
+  with "- ", naming the root cause in plain words. Then the file blocks.
 
 {FILE_BLOCK_INSTRUCTIONS}"""
 
@@ -43,6 +49,12 @@ def _format_issues(issues: list[Issue]) -> str:
     return "\n\n".join(lines)
 
 
+def diagnosis(text: str) -> list[str]:
+    """The "- " lines written before the first file or dispute block."""
+    head = strip_reasoning(text).split("<<<", 1)[0]
+    return [ln.strip()[2:].strip() for ln in head.splitlines() if ln.strip().startswith(("- ", "* "))][:3]
+
+
 def debug(
     ctx: RunContext,
     spec: Spec,
@@ -50,8 +62,8 @@ def debug(
     tests: dict[str, str],
     issues: list[Issue],
     history: list[DebugRound],
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Returns (changed source files, disputes {test_id: reason})."""
+) -> tuple[dict[str, str], dict[str, str], list[str]]:
+    """Returns (changed source files, disputes {test_id: reason}, diagnosis lines)."""
     failing_test_files = {i.file for i in issues if i.source == "test" and i.file}
     relevant_tests = {p: c for p, c in tests.items() if p in failing_test_files} or tests
     parts = [
@@ -68,7 +80,7 @@ def debug(
             for h in history
         ))
 
-    def parse(text: str) -> tuple[dict[str, str], dict[str, str]]:
+    def parse(text: str) -> tuple[dict[str, str], dict[str, str], list[str]]:
         disputes = parse_disputes(text)
         try:
             changed = parse_file_blocks(text)
@@ -88,6 +100,6 @@ def debug(
         changed = {p: c for p, c in changed.items() if files.get(p) != c}
         if not changed and not disputes:
             raise ValueError("No file changes and no disputes were returned.")
-        return changed, disputes
+        return changed, disputes, diagnosis(text)
 
     return llm.call_text(ctx, "debugger", SYSTEM, "\n".join(parts), parse)

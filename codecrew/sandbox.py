@@ -61,11 +61,12 @@ def _scrubbed_env(workdir: Path) -> dict[str, str]:
     return env
 
 
-def run(cmd: list[str], workdir: Path, timeout: int | None = None) -> ExecResult:
+def run(cmd: list[str], workdir: Path, timeout: int | None = None, stdin: str | None = None) -> ExecResult:
+    """Runs `cmd`; `stdin` (if given) is fed to the program, otherwise it reads EOF."""
     timeout = timeout or settings.test_timeout_sec
     if settings.sandbox == "docker":
         cmd = [
-            "docker", "run", "--rm", "--network", "none", "--memory", "512m", "--cpus", "1",
+            "docker", "run", "--rm", *(["-i"] if stdin is not None else []), "--network", "none", "--memory", "512m", "--cpus", "1",
             "--pids-limit", "256", "-v", f"{workdir}:/work", "-w", "/work",
             "-e", "PYTHONPATH=/work:/work/src", "-e", "PYTHONDONTWRITEBYTECODE=1",
             "codecrew-sandbox", *[_container_cmd(c) for c in cmd],
@@ -80,7 +81,7 @@ def run(cmd: list[str], workdir: Path, timeout: int | None = None) -> ExecResult
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
-            stdin=subprocess.DEVNULL,
+            **({"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}),
         )
         return ExecResult(proc.returncode, (proc.stdout or "") + (proc.stderr or ""))
     except subprocess.TimeoutExpired as e:

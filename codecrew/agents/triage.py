@@ -15,7 +15,14 @@ names/signatures), list any NEW acceptance criteria the change introduces
 (so the Test Author can add tests for them), and write precise instructions
 for the Coder. Do not include test files or README.md in `files`; set
 update_readme when user-facing behaviour or usage changes. For a pure
-documentation request, `files` may be empty."""
+documentation request, `files` may be empty.
+
+For web pages: when the change alters the look or adds, removes or
+reorders sections, return the complete updated `design` brief (keep every
+section that stays, with its id); otherwise set `design` to null. Visual
+requests ("make it modern", "like this site") deserve a real redesign of
+the affected sections, not a one-line tweak. If the request includes
+reference material or images, follow them closely."""
 
 
 def _validate(t: TriageOut) -> TriageOut:
@@ -33,10 +40,13 @@ def _validate(t: TriageOut) -> TriageOut:
     return t
 
 
-def triage(ctx: RunContext, spec: Spec, files: dict[str, str], request: str) -> TriageOut:
+def triage(ctx: RunContext, spec: Spec, files: dict[str, str], request: str, references: str = "",
+           images: list[llm.Image] | None = None) -> TriageOut:
     user = (
         f"Current specification:\n{spec.model_dump_json(indent=1)}\n\n"
-        f"Current source files:\n{render_file_blocks(files, limit_chars=6000)}\n\n"
+        f"Current source files:\n{render_file_blocks(files, limit_chars=20000)}\n\n"
         f"Change request:\n{request}"
     )
-    return llm.call_structured(ctx, "triage", SYSTEM, user, TriageOut, validate=_validate)
+    if references:
+        user += f"\n\n{references}"
+    return llm.call_structured(ctx, "triage", SYSTEM, user, TriageOut, validate=_validate, images=images)
