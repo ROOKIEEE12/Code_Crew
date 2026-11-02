@@ -112,3 +112,20 @@ def test_sandbox_hides_secrets(monkeypatch):
         "tests/test_leak.py": "from leak import key\n\ndef test_no_key():\n    assert key() is None\n",
     }
     assert verify(files).passed
+
+
+def test_docker_sandbox_uses_the_configured_image(monkeypatch, tmp_path):
+    from codecrew import sandbox
+    from codecrew.config import settings
+
+    seen = {}
+
+    def fake_run(cmd, **_):
+        seen["cmd"] = cmd
+        raise FileNotFoundError("docker")
+
+    monkeypatch.setattr(sandbox.subprocess, "run", fake_run)
+    monkeypatch.setattr(sandbox, "settings", type(settings)(sandbox="docker", docker_image="my-sandbox:2"))
+    sandbox.run(["python", "x.py"], tmp_path)
+    assert "my-sandbox:2" in seen["cmd"]
+    assert type(settings)().docker_image == "codecrew-sandbox"  # the image sandbox/Dockerfile builds

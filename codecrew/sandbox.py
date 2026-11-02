@@ -69,7 +69,7 @@ def run(cmd: list[str], workdir: Path, timeout: int | None = None, stdin: str | 
             "docker", "run", "--rm", *(["-i"] if stdin is not None else []), "--network", "none", "--memory", "512m", "--cpus", "1",
             "--pids-limit", "256", "-v", f"{workdir}:/work", "-w", "/work",
             "-e", "PYTHONPATH=/work:/work/src", "-e", "PYTHONDONTWRITEBYTECODE=1",
-            "codecrew-sandbox", *[_container_cmd(c) for c in cmd],
+            settings.docker_image, *[_container_cmd(c) for c in cmd],
         ]
     try:
         proc = subprocess.run(

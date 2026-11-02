@@ -85,7 +85,8 @@ class Settings:
     # "process" runs tests in a scrubbed subprocess; "docker" adds a
     # network-less container (requires a running Docker daemon).
     sandbox: str = field(default_factory=lambda: os.getenv("SANDBOX", "process"))
-    docker_image: str = field(default_factory=lambda: os.getenv("SANDBOX_IMAGE", "python:3.12-slim"))
+    # Built from sandbox/Dockerfile (python + node + pytest); a plain python image has no pytest.
+    docker_image: str = field(default_factory=lambda: os.getenv("SANDBOX_IMAGE", "codecrew-sandbox"))
 
     output_dir: Path = field(
         default_factory=lambda: (ROOT_DIR / os.getenv("OUTPUT_DIR", "generated_projects")).resolve()
