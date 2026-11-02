@@ -59,10 +59,16 @@ class LiveText:
             self._pending = []
         self._emit("", reset=True)
 
-    def write(self, chunk: str) -> None:
+    def for_attempt(self) -> "LiveText":
+        """A writer bound to the current attempt, handed to the provider."""
+        return _AttemptLive(self)  # type: ignore[return-value]
+
+    def write(self, chunk: str, attempt: Optional[int] = None) -> None:
         if not chunk or self.closed:
             return
         with self._lock:
+            if attempt is not None and attempt != self.attempt:
+                return  # from a call abandoned before a newer attempt started
             self._pending.append(chunk)
             due = time.monotonic() - self._last >= self.INTERVAL
         if due:
@@ -87,6 +93,22 @@ class LiveText:
             return
         self.ctx.emit("llm_delta", {"id": self.call_id, "role": self.role, "attempt": self.attempt,
                                     "offset": offset, "text": text, "reset": reset})
+
+
+class _AttemptLive:
+    """One attempt's view of a LiveText. The watchdog can give up on a call whose
+    thread keeps running; once a newer attempt has started, what it writes is dropped."""
+
+    def __init__(self, live: LiveText):
+        self._live, self._attempt = live, live.attempt
+
+    def write(self, chunk: str) -> None:
+        self._live.write(chunk, self._attempt)
+
+    def restart(self) -> None:
+        if self._live.attempt == self._attempt:
+            self._live.restart()
+            self._attempt = self._live.attempt
 
 
 class LLMError(RuntimeError):
@@ -605,7 +627,7 @@ def _attempt_chain(
             info["attempts"] += 1
             if live and info["attempts"] > 1:
                 live.restart()
-            extra = {"live": live} if live and _accepts_live(provider) else {}
+            extra = {"live": live.for_attempt()} if live and _accepts_live(provider) else {}
             try:
                 result, completion = _with_watchdog(ctx, lambda p=provider, m=model, q=prompt: attempt(p, m, q, **extra))
             except VisionUnsupported as e:

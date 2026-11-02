@@ -230,3 +230,64 @@ def test_run_interrupted_by_a_restart_can_be_resumed(monkeypatch, tmp_path):
     assert done.status == "succeeded", done.error
     new_calls = provider.calls[len(calls_before):]
     assert "planner" not in new_calls and "test_author" not in new_calls
+
+
+class StreamsThenHangs(Provider):
+    """Streams a few characters, stalls past the watchdog, then keeps streaming:
+    a call the run has already given up on."""
+    name = "stalls"
+
+    def __init__(self):
+        self.resume = threading.Event()
+        self.finished = threading.Event()
+
+    def configured(self):
+        return True
+
+    def models_for(self, role):
+        return ["slow"]
+
+    def text(self, model, system, user, role, live=None):
+        live.write("OLD-")
+        self.resume.wait(30)
+        for _ in range(5):
+            live.write("STALE")
+            time.sleep(0.35)  # past LiveText.INTERVAL, so every piece is flushed
+        self.finished.set()
+        return Completion("too late", model, 1, 1)
+
+
+class StreamsNew(Provider):
+    name = "streams"
+
+    def __init__(self, stalled):
+        self.stalled = stalled
+
+    def configured(self):
+        return True
+
+    def models_for(self, role):
+        return ["fresh"]
+
+    def text(self, model, system, user, role, live=None):
+        self.stalled.resume.set()  # the abandoned call wakes up while this one streams
+        for piece in ("NEW-", "1", "2", "3"):
+            live.write(piece)
+            time.sleep(0.4)
+        self.stalled.finished.wait(10)
+        return Completion("ok", model, 1, 1)
+
+
+def test_an_abandoned_call_does_not_write_into_the_retrys_live_view(monkeypatch, short_timeout):
+    stalled = StreamsThenHangs()
+    monkeypatch.setattr(llm, "candidates", lambda role: [(stalled, "slow"), (StreamsNew(stalled), "fresh")])
+    events = []
+    ctx = RunContext(orchestrator.new_run("x"), sink=events.append)
+    assert llm.call_text(ctx, "coder", "s", "u", parse=lambda t: t) == "ok"
+
+    text: dict[int, str] = {}
+    for e in events:
+        if e.type == "llm_delta":
+            d = e.data
+            text[d["attempt"]] = "" if d["reset"] else text.get(d["attempt"], "") + d["text"]
+    assert text[max(text)] == "NEW-123"
